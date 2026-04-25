@@ -209,7 +209,9 @@
       <div class="keyGrid">
         <div class="key" id="keyW">W</div><div class="key" id="keyA">A</div><div class="key" id="keyD">D</div>
         <div class="key" id="keyS">S</div><div class="key" id="keyQ">Q</div><div class="key" id="keyE">E</div>
+        <div class="key" id="keyF">F</div>
       </div>
+      <button id="stabilizeBtn" style="width:100%; margin-top:10px;">stabilization_off</button>
       <button id="dropBallBtn" style="width:100%; margin-top:10px;">drop_heavy_ball</button>
       <div class="phaseDesc" id="ballStatus" style="margin-top:8px;">ball_ready</div>
     </section>
@@ -326,6 +328,7 @@
         titleDesc: 'checked build · stable control idle · long chassis · ball stabilization demo',
         topStatJoints: 'JOINTS_PER_LEG = 3',
         motionStaticBtn: 'STATIC', motionWalkBtn: 'WALK', motionControlBtn: 'CONTROL',
+        stabilizeOn: 'stabilization_on', stabilizeOff: 'stabilization_off',
         lblMovementMode: 'movement_mode', lblMotionFrame: 'motion_frame',
         motionFrameDesc: 'static = stepping in place · walk = automatic translation · control = WASD/QE physics drive',
         lblAnimationTuning: 'animation_tuning', labSpeed: 'speed', labStepLength: 'step_length', labLiftHeight: 'lift_height', labBodyHeight: 'body_height', labCoxaLength: 'coxa_length', labFemurLength: 'femur_length', labTibiaLength: 'tibia_length',
@@ -345,6 +348,7 @@
         titleDesc: 'skontrolovana verzia · stabilne ovladanie · dlhe telo · test samostabilizacie',
         topStatJoints: 'KLBY_NA_NOHU = 3',
         motionStaticBtn: 'STATICKY', motionWalkBtn: 'CHODZA', motionControlBtn: 'OVLADANIE',
+        stabilizeOn: 'stabilizacia_zapnuta', stabilizeOff: 'stabilizacia_vypnuta',
         lblMovementMode: 'rezim_pohybu', lblMotionFrame: 'typ_pohybu',
         motionFrameDesc: 'staticky = krokuje na mieste · chodza = automaticky sa posuva · ovladanie = WASD/QE',
         lblAnimationTuning: 'nastavenie_animacie', labSpeed: 'rychlost', labStepLength: 'dlzka_kroku', labLiftHeight: 'vyska_zdvihu', labBodyHeight: 'vyska_tela', labCoxaLength: 'dlzka_coxa', labFemurLength: 'dlzka_femur', labTibiaLength: 'dlzka_tibia',
@@ -421,6 +425,42 @@
         { x: 42.0, z: -1.8, r: 1.55, h: 1.44 }
       ];
 
+      function makeTerrainTexture() {
+        const size = 512;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const image = ctx.createImageData(size, size);
+        const data = image.data;
+        for (let py = 0; py < size; py++) {
+          const z = (py / (size - 1) - 0.5) * 150;
+          for (let px = 0; px < size; px++) {
+            const x = (px / (size - 1) - 0.5) * 150;
+            const h = terrainHeightAt(x, z);
+            const n = terrainNormalAt(x, z);
+            const slope = clamp(1 - n.y, 0, 1);
+            const band = Math.abs(((h * 2.25) % 1) - 0.5);
+            const contour = band < 0.035 ? -34 : 0;
+            const fine = Math.sin(x * 3.1 + z * 0.7) * 7 + Math.sin(z * 2.4) * 5;
+            const t = clamp(h / 2.9, 0, 1);
+            const shade = contour + fine + slope * 46;
+            const i = (py * size + px) * 4;
+            data[i + 0] = clamp(92 + t * 74 - slope * 34 + shade, 0, 255);
+            data[i + 1] = clamp(128 + t * 58 - slope * 18 + shade, 0, 255);
+            data[i + 2] = clamp(72 + t * 42 - slope * 10 + shade * 0.75, 0, 255);
+            data[i + 3] = 255;
+          }
+        }
+        ctx.putImageData(image, 0, 0);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        return texture;
+      }
+
       const terrainGeometry = new THREE.PlaneGeometry(150, 150, 160, 160);
       const terrainPos = terrainGeometry.attributes.position;
       for (let i = 0; i < terrainPos.count; i++) {
@@ -431,7 +471,7 @@
       terrainGeometry.computeVertexNormals();
       const terrain = new THREE.Mesh(
         terrainGeometry,
-        new THREE.MeshStandardMaterial({ color: 0x8fb06c, roughness: 0.92, metalness: 0.01 })
+        new THREE.MeshStandardMaterial({ map: makeTerrainTexture(), color: 0xffffff, roughness: 0.96, metalness: 0.01 })
       );
       terrain.rotation.x = -Math.PI / 2;
       terrain.receiveShadow = true;
@@ -751,6 +791,7 @@
         paused: false, t: 0, gaitT: 0, yaw: 0, vel: new THREE.Vector3(), targetVel: new THREE.Vector3(), yawVel: 0, targetYawVel: 0,
         cmdForward: 0, cmdStrafe: 0, cmdTurn: 0, ballActive: false, ballHit: false, ballContact: false, ballGrabbed: false, ballVel: new THREE.Vector3(),
         bodyTilt: new THREE.Vector3(), bodyTiltVel: new THREE.Vector3(), bodyOffsetY: 0, bodyOffsetVel: 0,
+        stabilization: false, bodyPitch: 0, bodyRoll: 0, rockContactT: 0,
         transitionT: 0, transitionDuration: 0, currentBodyY: 1.16, load: 0,
         recoveryT: 0, stability: 1, cameraMode: 'orbit', autopilot: false, autopilotTarget: new THREE.Vector3(),
         visuals: { pressure: false, com: false, support: false, ghost: false, shadows: true }
@@ -772,12 +813,15 @@
 
       function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
       function smooth(t) { return t * t * (3 - 2 * t); }
+      function smoother(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
       function lerp(a, b, t) { return a + (b - a) * t; }
       function terrainHeightAt(x, z) {
-        const blend = smooth(clamp((x - 3.5) / 9.0, 0, 1));
+        const blend = smooth(clamp((x - 1.5) / 8.0, 0, 1));
         if (blend <= 0) return 0;
-        let h = 0.48 * Math.sin(x * 0.32) + 0.34 * Math.cos(z * 0.42) + 0.24 * Math.sin((x + z) * 0.24);
-        h += 0.38 * Math.sin(x * 0.68 + z * 0.19);
+        let h = 0.76 * Math.sin(x * 0.27) + 0.55 * Math.cos(z * 0.37) + 0.36 * Math.sin((x + z) * 0.21);
+        h += 0.52 * Math.sin(x * 0.61 + z * 0.24);
+        h += 0.28 * Math.sin(Math.sqrt(x * x + z * z) * 0.42);
+        h += 0.16 * Math.sin(x * 1.45) * Math.cos(z * 1.18);
         for (const rock of rockDefs) {
           const dx = x - rock.x;
           const dz = z - rock.z;
@@ -787,7 +831,7 @@
             h += rock.h * Math.pow(u, 0.42);
           }
         }
-        return Math.max(0, h * blend + 0.18 * blend);
+        return Math.max(0, h * blend + 0.24 * blend);
       }
       function terrainNormalAt(x, z) {
         const e = 0.35;
@@ -841,7 +885,7 @@
         const turn = (keys.q ? 1 : 0) - (keys.e ? 1 : 0);
         state.cmdForward = lerp(state.cmdForward, f, 0.14);
         state.cmdStrafe = lerp(state.cmdStrafe, s, 0.14);
-        state.cmdTurn = lerp(state.cmdTurn, turn, 0.16);
+        state.cmdTurn = lerp(state.cmdTurn, turn, 0.11);
         const v = new THREE.Vector3(state.cmdStrafe, 0, -state.cmdForward);
         if (v.lengthSq() > 1) v.normalize();
         return { v, yaw: state.cmdTurn };
@@ -870,19 +914,19 @@
           );
           if (Math.abs(desiredYaw) > 0.55) v.multiplyScalar(0.35);
           const damageScale = clamp(healthyLegs().length / 6, 0.35, 1);
-          return { v: v.multiplyScalar(1.04 * state.step * state.speed * damageScale), yaw: clamp(desiredYaw, -1.0, 1.0) * 0.82 * state.speed };
+          return { v: v.multiplyScalar(1.04 * state.step * state.speed * damageScale), yaw: clamp(desiredYaw, -1.0, 1.0) * 0.52 * state.speed };
         }
         if (state.motionFrame === 'control') {
           const c = controlVector();
           const damageScale = clamp(healthyLegs().length / 6, 0.35, 1);
-          return { v: c.v.multiplyScalar(1.22 * state.step * state.speed * damageScale), yaw: c.yaw * 0.92 * state.speed * damageScale };
+          return { v: c.v.multiplyScalar(1.22 * state.step * state.speed * damageScale), yaw: c.yaw * 0.48 * state.speed * damageScale };
         }
         const m = modes[state.mode];
-        if (state.motionFrame === 'static') return { v: new THREE.Vector3(0, 0, 0), yaw: m.yaw * 0.45 * state.speed };
+        if (state.motionFrame === 'static') return { v: new THREE.Vector3(0, 0, 0), yaw: m.yaw * 0.28 * state.speed };
         const v = new THREE.Vector3(m.vx, 0, m.vz);
         const damageScale = clamp(healthyLegs().length / 6, 0.35, 1);
         if (v.lengthSq() > 0) v.normalize().multiplyScalar(1.05 * state.step * state.speed * damageScale);
-        return { v, yaw: m.yaw * 0.62 * state.speed * damageScale };
+        return { v, yaw: m.yaw * 0.38 * state.speed * damageScale };
       }
 
       function footPlacementOffset(def, phase, localVel, yawVel) {
@@ -895,6 +939,47 @@
         out.x = clamp(out.x, -0.64, 0.64);
         out.z = clamp(out.z, -0.78, 0.78);
         return out;
+      }
+
+      function resolveRobotRockCollisions(dt) {
+        let hit = false;
+        const halfX = 1.75;
+        const halfZ = 3.88;
+        for (const rock of rockDefs) {
+          const center = new THREE.Vector3(rock.x - robot.position.x, 0, rock.z - robot.position.z);
+          center.applyAxisAngle(yAxis, -state.yaw);
+          const closest = new THREE.Vector3(
+            clamp(center.x, -halfX, halfX),
+            0,
+            clamp(center.z, -halfZ, halfZ)
+          );
+          const delta = center.sub(closest);
+          let dist = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+          const clearance = rock.r * 0.72 + 0.38;
+          if (dist >= clearance) continue;
+
+          if (dist < 0.0001) {
+            const edgeX = halfX - Math.abs(closest.x);
+            const edgeZ = halfZ - Math.abs(closest.z);
+            if (edgeX < edgeZ) delta.set(Math.sign(closest.x || 1), 0, 0);
+            else delta.set(0, 0, Math.sign(closest.z || 1));
+            dist = 0;
+          } else {
+            delta.multiplyScalar(1 / dist);
+          }
+          const push = delta.applyAxisAngle(yAxis, state.yaw).multiplyScalar(-(clearance - dist + 0.015));
+          robot.position.add(push);
+          state.vel.multiplyScalar(0.58);
+          state.yawVel *= 0.72;
+          hit = true;
+        }
+        if (hit) {
+          state.rockContactT = 0.22;
+          state.bodyTiltVel.x += clamp(state.vel.z * 0.10, -0.16, 0.16);
+          state.bodyTiltVel.z += clamp(-state.vel.x * 0.12, -0.18, 0.18);
+        } else if (state.rockContactT > 0) {
+          state.rockContactT = Math.max(0, state.rockContactT - dt);
+        }
       }
 
       function limitFootTarget(def, target) {
@@ -950,7 +1035,7 @@
         let femur = clamp(a + b, -1.22, 0.86);
         const knee = Math.acos(clamp((L2 * L2 + L3Foot * L3Foot - d * d) / (2 * L2 * L3Foot), -1, 1));
         const tibia = clamp(-(Math.PI - knee), -2.08, -0.46);
-        const blend = swing ? 0.42 : 0.68;
+        const blend = swing ? 0.24 : 0.38;
         leg.coxaYaw.rotation.y = angleLerp(leg.coxaYaw.rotation.y, yaw, blend);
         leg.femurPitch.rotation.z = angleLerp(leg.femurPitch.rotation.z, femur, blend);
         leg.tibiaPitch.rotation.z = angleLerp(leg.tibiaPitch.rotation.z, tibia, blend);
@@ -995,6 +1080,8 @@
           const el = document.getElementById('key' + k.toUpperCase());
           if (el) el.classList.toggle('on', keys[k]);
         }
+        const f = document.getElementById('keyF');
+        if (f) f.classList.toggle('on', state.stabilization);
       }
 
       function updateDirectionVisuals(currentBodyY) {
@@ -1179,6 +1266,8 @@
         if (!validNumber(state.yawVel)) state.yawVel = 0;
         if (!validNumber(state.bodyOffsetY)) state.bodyOffsetY = 0;
         if (!validNumber(state.bodyOffsetVel)) state.bodyOffsetVel = 0;
+        if (!validNumber(state.bodyPitch)) state.bodyPitch = 0;
+        if (!validNumber(state.bodyRoll)) state.bodyRoll = 0;
         if (!validNumber(state.gaitT)) state.gaitT = 0;
         state.bodyOffsetY = clamp(state.bodyOffsetY, -0.55, 0.18);
         state.bodyOffsetVel = clamp(state.bodyOffsetVel, -3.5, 2.0);
@@ -1200,6 +1289,7 @@
           else el.textContent = t[id];
         }
         document.getElementById('pauseBtn').textContent = state.paused ? t.resume : t.pause;
+        document.getElementById('stabilizeBtn').textContent = state.stabilization ? t.stabilizeOn : t.stabilizeOff;
         document.getElementById('ballStatus').textContent = state.ballActive ? (state.ballHit ? t.ballImpact : t.ballFalling) : t.ballReady;
         updatePhaseUI((state.gaitT % 2) / 2);
       }
@@ -1293,6 +1383,14 @@
           controls.target.set(0, state.bodyHeight * 0.7, 0);
         }
         startFootTransition(transitionDuration);
+      }
+
+      function setStabilization(enabled) {
+        state.stabilization = enabled;
+        const btn = document.getElementById('stabilizeBtn');
+        btn.textContent = enabled ? i18n[state.lang].stabilizeOn : i18n[state.lang].stabilizeOff;
+        btn.classList.toggle('active', enabled);
+        startFootTransition(enabled ? 0.44 : 0.34);
       }
 
       function dropBall() {
@@ -1465,24 +1563,24 @@
         requestAnimationFrame(animate);
         const dt = Math.min(clock.getDelta(), 0.05);
         sanitizePhysics();
-        const controlIdle = state.motionFrame === 'control' && !controlInputActive();
-        const desired = controlIdle ? { v: new THREE.Vector3(0, 0, 0), yaw: 0 } : desiredLocalVelocity();
+        const controlCoasting = state.motionFrame === 'control' && !controlInputActive();
+        const desired = controlCoasting ? { v: new THREE.Vector3(0, 0, 0), yaw: 0 } : desiredLocalVelocity();
         state.targetVel.copy(desired.v);
         state.targetYawVel = desired.yaw;
-        if (controlIdle) {
-          state.vel.set(0, 0, 0);
-          state.yawVel = 0;
-        } else {
-          state.vel.lerp(state.targetVel, state.motionFrame === 'control' ? 0.16 : 0.12);
-          state.yawVel = lerp(state.yawVel, state.targetYawVel, state.motionFrame === 'control' ? 0.16 : 0.14);
-        }
+        const velBlend = state.motionFrame === 'control' ? (controlCoasting ? 0.075 : 0.15) : 0.12;
+        const yawBlend = state.motionFrame === 'control' ? (controlCoasting ? 0.085 : 0.12) : 0.12;
+        state.vel.lerp(state.targetVel, velBlend);
+        state.yawVel = lerp(state.yawVel, state.targetYawVel, yawBlend);
+        const driveAmount = state.vel.length() + Math.abs(state.yawVel) * 0.95;
+        const controlSettled = controlCoasting && driveAmount < 0.035;
 
         if (!state.paused) {
           state.t += dt * state.speed;
           if (state.transitionT > 0) state.transitionT = Math.max(0, state.transitionT - dt);
-          const driveAmount = state.vel.length() + Math.abs(state.yawVel) * 0.95;
-          let gaitSpeed = clamp(0.24 + driveAmount * 0.86, 0.0, 2.3) * state.speed;
-          if (controlIdle || state.transitionT > 0) gaitSpeed = 0;
+          const baseGait = state.motionFrame === 'control' ? 0.02 : 0.16;
+          let gaitSpeed = clamp(baseGait + driveAmount * 0.58, 0.0, 1.55) * state.speed;
+          if (controlCoasting && legs.some(leg => leg.swingState)) gaitSpeed = Math.max(gaitSpeed, 0.42 * state.speed);
+          if ((controlSettled && !legs.some(leg => leg.swingState)) || state.transitionT > 0) gaitSpeed = 0;
           if (state.recoveryT > 0) gaitSpeed *= 0.28;
           state.gaitT += dt * gaitSpeed;
           const supportFactor = locomotionSupportFactor();
@@ -1490,9 +1588,10 @@
             state.vel.multiplyScalar(0.96);
             state.yawVel *= 0.96;
           }
-          if (state.motionFrame !== 'static' && !controlIdle) {
+          if (state.motionFrame !== 'static') {
             const stanceDrive = gaitSpeed > 0 ? supportFactor : 0;
             robot.position.add(state.vel.clone().applyAxisAngle(yAxis, robot.rotation.y).multiplyScalar(dt * stanceDrive * (state.recoveryT > 0 ? 0.35 : 1)));
+            resolveRobotRockCollisions(dt);
           }
           state.yaw += state.yawVel * dt * Math.max(0.25, supportFactor);
         }
@@ -1510,8 +1609,10 @@
         const currentBodyY = terrainBase + adaptiveBodyHeight() + state.bodyOffsetY + Math.sin(state.gaitT * Math.PI * 2) * 0.018 * bobDrive;
         state.currentBodyY = currentBodyY;
 
-        state.bodyTiltVel.x += (-state.bodyTilt.x * 8.5 - state.bodyTiltVel.x * 4.6) * dt;
-        state.bodyTiltVel.z += (-state.bodyTilt.z * 8.5 - state.bodyTiltVel.z * 4.6) * dt;
+        const tiltSpring = state.stabilization ? 18.0 : 8.5;
+        const tiltDamping = state.stabilization ? 8.8 : 4.6;
+        state.bodyTiltVel.x += (-state.bodyTilt.x * tiltSpring - state.bodyTiltVel.x * tiltDamping) * dt;
+        state.bodyTiltVel.z += (-state.bodyTilt.z * tiltSpring - state.bodyTiltVel.z * tiltDamping) * dt;
         if (!state.paused) {
           state.bodyTilt.x = clamp(state.bodyTilt.x + state.bodyTiltVel.x * dt, -0.42, 0.42);
           state.bodyTilt.z = clamp(state.bodyTilt.z + state.bodyTiltVel.z * dt, -0.46, 0.46);
@@ -1521,8 +1622,15 @@
         const terrainNormal = terrainNormalAt(robot.position.x, robot.position.z);
         const slopePitch = clamp(Math.atan2(terrainNormal.z, terrainNormal.y), -0.18, 0.18);
         const slopeRoll = clamp(-Math.atan2(terrainNormal.x, terrainNormal.y), -0.18, 0.18);
-        bodyGroup.rotation.x = Math.cos(state.gaitT * 1.8) * 0.008 * bobDrive + state.bodyTilt.x + slopePitch;
-        bodyGroup.rotation.z = Math.sin(state.gaitT * 2.0) * 0.012 * bobDrive + state.bodyTilt.z + slopeRoll;
+        const walkPitch = Math.cos(state.gaitT * 1.8) * 0.008 * bobDrive;
+        const walkRoll = Math.sin(state.gaitT * 2.0) * 0.012 * bobDrive;
+        const targetPitch = state.stabilization ? walkPitch * 0.22 : walkPitch + state.bodyTilt.x + slopePitch;
+        const targetRoll = state.stabilization ? walkRoll * 0.22 : walkRoll + state.bodyTilt.z + slopeRoll;
+        const levelBlend = clamp(dt * (state.stabilization ? 9.5 : 12.0), 0, 1);
+        state.bodyPitch = lerp(state.bodyPitch, targetPitch, levelBlend);
+        state.bodyRoll = lerp(state.bodyRoll, targetRoll, levelBlend);
+        bodyGroup.rotation.x = state.bodyPitch;
+        bodyGroup.rotation.z = state.bodyRoll;
         robot.updateMatrixWorld(true);
         updateBall(dt);
 
@@ -1530,7 +1638,8 @@
           const isA = leg.def.phase === 0;
           const legPhase = (cycle + (isA ? 0 : 0.5)) % 1;
           let swing = legPhase < 0.5;
-          const p = swing ? smooth(legPhase / 0.5) : smooth((legPhase - 0.5) / 0.5);
+          const rawPhase = swing ? legPhase / 0.5 : (legPhase - 0.5) / 0.5;
+          const p = smoother(rawPhase);
 
           if (leg.damaged) {
             swing = false;
@@ -1553,7 +1662,7 @@
             leg.swingState = false;
             leg.swingStart.copy(leg.footWorld);
             leg.swingTarget.copy(leg.transitionTarget);
-          } else if (controlIdle) {
+          } else if (controlSettled) {
             swing = false;
             leg.footWorld.y = footGroundHeight(leg.footWorld);
             leg.swingState = false;
@@ -1584,8 +1693,11 @@
               leg.footWorld.y = footGroundHeight(leg.footWorld);
             }
             if (swing) {
+              const liftPhase = smoother(rawPhase);
+              const liftArc = Math.pow(Math.sin(Math.PI * liftPhase), 0.72);
+              const clearance = state.lift * (1.22 + clamp(driveAmount, 0, 1.2) * 0.10) + 0.08;
               leg.footWorld.copy(leg.swingStart).lerp(leg.swingTarget, p);
-              leg.footWorld.y = lerp(footGroundHeight(leg.swingStart), footGroundHeight(leg.swingTarget), p) + Math.sin(Math.PI * p) * state.lift;
+              leg.footWorld.y = lerp(footGroundHeight(leg.swingStart), footGroundHeight(leg.swingTarget), p) + liftArc * clearance;
             } else {
               leg.footWorld.y = footGroundHeight(leg.footWorld);
             }
@@ -1627,6 +1739,10 @@
 
       addEventListener('keydown', e => {
         const k = e.key.toLowerCase();
+        if (k === 'f' && !e.repeat) {
+          setStabilization(!state.stabilization);
+          return;
+        }
         if (k in keys) {
           state.autopilot = false;
           autopilotTarget.visible = false;
@@ -1773,6 +1889,9 @@
         state.paused = !state.paused;
         e.currentTarget.textContent = state.paused ? i18n[state.lang].resume : i18n[state.lang].pause;
         e.currentTarget.classList.toggle('active', state.paused);
+      });
+      document.getElementById('stabilizeBtn').addEventListener('click', () => {
+        setStabilization(!state.stabilization);
       });
       document.getElementById('dropBallBtn').addEventListener('click', dropBall);
 
