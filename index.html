@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hexapod Robot 3D Gait Animator</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --panel: rgba(255,255,255,0.78);
+      --line: #d8e2ee;
+      --line-strong: #b6c7da;
+      --text: #0f172a;
+      --muted: #64748b;
+      --blue: #0067ff;
+      --green: #109a46;
+      --orange: #ff7a00;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --shadow: 0 18px 42px rgba(15,23,42,0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      color: var(--text);
+      font-family: var(--mono);
+      background:
+        linear-gradient(90deg, rgba(0,103,255,0.04) 1px, transparent 1px),
+        linear-gradient(rgba(0,103,255,0.04) 1px, transparent 1px),
+        radial-gradient(circle at 50% 14%, #ffffff 0%, #f7faff 34%, #eef3f8 100%);
+      background-size: 28px 28px, 28px 28px, auto;
+    }
+
+    #app { position: fixed; inset: 0; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+    .topbar, .rail, .rightInfo, .bottomLine {
+      position: fixed;
+      z-index: 10;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .topbar {
+      display: none;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      grid-template-columns: 1fr auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-left: 4px solid var(--blue);
+    }
+
+    .topbar h1 { margin: 0; font-size: 20px; letter-spacing: 0.3px; }
+    .topbar p { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+    .topTools { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .miniGroup { display: inline-flex; border: 1px solid var(--line-strong); background: rgba(255,255,255,0.86); }
+    .miniGroup button { border: 0; border-right: 1px solid var(--line-strong); background: transparent; min-width: 60px; }
+    .miniGroup button:last-child { border-right: 0; }
+    .topStat { border: 1px solid var(--line-strong); padding: 8px 10px; font-size: 11px; background: rgba(255,255,255,0.86); white-space: nowrap; }
+
+    .rail {
+      left: 14px;
+      top: 14px;
+      bottom: 14px;
+      width: 318px;
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .section + .section { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+    .label { margin: 0 0 10px; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #415067; text-transform: uppercase; }
+    .modeGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+    button {
+      border: 1px solid var(--line-strong);
+      background: rgba(255,255,255,0.92);
+      color: var(--text);
+      padding: 9px 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.14s ease;
+    }
+    button:hover { border-color: #92b6f5; transform: translateY(-1px); }
+    button.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    .control { display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: center; margin-bottom: 12px; }
+    .control label, .control span { font-size: 11px; }
+    .control span { color: var(--muted); }
+    .control input { grid-column: 1 / 3; width: 100%; accent-color: var(--blue); }
+    .phaseTitle { font-size: 12px; font-weight: 800; margin-bottom: 6px; }
+    .phaseDesc { font-size: 11px; color: var(--muted); line-height: 1.45; }
+    .phaseBar { height: 9px; background: #e6edf5; margin-top: 10px; overflow: hidden; }
+    .phaseFill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--blue), var(--orange)); }
+    .tripods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .tripod { font-size: 11px; line-height: 1.5; }
+    .tripod strong { display: block; margin-bottom: 4px; }
+    .keyGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 9px; }
+    .key { text-align: center; padding: 7px 5px; border: 1px solid var(--line); background: rgba(255,255,255,0.65); font-size: 11px; font-weight: 800; }
+    .key.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    .rightInfo { display: none; right: 14px; top: 14px; width: 318px; padding: 14px; }
+    .rightInfo p { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+    .legend { margin-top: 10px; display: grid; gap: 7px; }
+    .legend div { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; }
+    .sw { width: 20px; height: 8px; background: var(--blue); }
+    .sw.green { background: var(--green); }
+    .sw.orange { background: var(--orange); }
+
+    .bottomLine {
+      left: 346px;
+      right: 14px;
+      bottom: 14px;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      padding: 10px 14px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: auto;
+    }
+    .bottomLine strong { color: var(--text); }
+
+    .errorBox {
+      position: fixed;
+      inset: 20px;
+      z-index: 100;
+      display: none;
+      place-items: center;
+      background: rgba(255,255,255,0.96);
+      border: 1px solid var(--line);
+      padding: 24px;
+      text-align: center;
+      font-size: 13px;
+      font-family: var(--mono);
+    }
+
+    @media (max-width: 1340px) {
+      .rightInfo { display: none; }
+      .bottomLine { right: 14px; }
+    }
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      #app { position: relative; height: 70vh; }
+      .topbar, .rail, .rightInfo, .bottomLine { position: relative; left: auto; right: auto; top: auto; bottom: auto; width: auto; margin: 12px; }
+      .topbar { grid-template-columns: 1fr; }
+      .topTools { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="errorBox" class="errorBox"></div>
+
+  <div class="topbar">
+    <div>
+      <h1 id="titleMain">HEXAPOD_3D_GAIT_ANIMATOR</h1>
+      <p id="titleDesc">checked build · stable control idle · long chassis · ball stabilization demo</p>
+    </div>
+    <div class="topStat" id="topStatJoints">JOINTS_PER_LEG = 3</div>
+    <div class="topTools">
+      <div class="miniGroup">
+        <button data-lang="en" class="active">EN</button>
+        <button data-lang="sk">SK</button>
+      </div>
+      <div class="miniGroup">
+        <button data-motion="static" id="motionStaticBtn" class="active">STATIC</button>
+        <button data-motion="walk" id="motionWalkBtn">WALK</button>
+        <button data-motion="control" id="motionControlBtn">CONTROL</button>
+      </div>
+    </div>
+  </div>
+
+  <aside class="rail">
+    <section class="section">
+      <div class="label" id="lblMovementMode">movement_mode</div>
+      <div class="modeGrid">
+        <button data-mode="forward" class="active" id="modeForward">forward</button>
+        <button data-mode="backward" id="modeBackward">backward</button>
+        <button data-mode="strafeLeft" id="modeStrafeLeft">strafe_left</button>
+        <button data-mode="strafeRight" id="modeStrafeRight">strafe_right</button>
+        <button data-mode="diagLeft" id="modeDiagLeft">diag_left</button>
+        <button data-mode="diagRight" id="modeDiagRight">diag_right</button>
+        <button data-mode="turnCW" id="modeTurnCW">turn_cw</button>
+        <button data-mode="turnCCW" id="modeTurnCCW">turn_ccw</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblMotionFrame">motion_frame</div>
+      <div class="phaseDesc" id="motionFrameDesc">static = stepping in place · walk = automatic translation · control = WASD/QE physics drive</div>
+      <div class="keyGrid">
+        <div class="key" id="keyW">W</div><div class="key" id="keyA">A</div><div class="key" id="keyD">D</div>
+        <div class="key" id="keyS">S</div><div class="key" id="keyQ">Q</div><div class="key" id="keyE">E</div>
+      </div>
+      <button id="dropBallBtn" style="width:100%; margin-top:10px;">drop_heavy_ball</button>
+      <div class="phaseDesc" id="ballStatus" style="margin-top:8px;">ball_ready</div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblAnimationTuning">animation_tuning</div>
+      <div class="control"><label id="labSpeed">speed</label><span id="speedVal">1.00x</span><input id="speed" type="range" min="0.02" max="3.60" step="0.02" value="1.00"></div>
+      <div class="control"><label id="labStepLength">step_length</label><span id="stepVal">1.00</span><input id="step" type="range" min="0.15" max="2.80" step="0.05" value="1.00"></div>
+      <div class="control"><label id="labLiftHeight">lift_height</label><span id="liftVal">0.52</span><input id="lift" type="range" min="0.05" max="2.20" step="0.05" value="0.52"></div>
+      <div class="control"><label id="labBodyHeight">body_height</label><span id="heightVal">1.16</span><input id="height" type="range" min="0.55" max="2.60" step="0.05" value="1.16"></div>
+      <div class="control"><label id="labCoxaLength">coxa_length</label><span id="coxaLenVal">1.05</span><input id="coxaLen" type="range" min="0.45" max="2.20" step="0.05" value="1.05"></div>
+      <div class="control"><label id="labFemurLength">femur_length</label><span id="femurLenVal">2.05</span><input id="femurLen" type="range" min="0.80" max="4.20" step="0.05" value="2.05"></div>
+      <div class="control"><label id="labTibiaLength">tibia_length</label><span id="tibiaLenVal">2.35</span><input id="tibiaLen" type="range" min="0.80" max="4.80" step="0.05" value="2.35"></div>
+      <button id="pauseBtn">pause_animation</button>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblDamage">leg_damage</div>
+      <div class="modeGrid">
+        <button data-damage="LF">LF</button>
+        <button data-damage="RF">RF</button>
+        <button data-damage="LM">LM</button>
+        <button data-damage="RM">RM</button>
+        <button data-damage="LR">LR</button>
+        <button data-damage="RR">RR</button>
+      </div>
+      <div class="phaseDesc" id="damageStatus" style="margin-top:8px;">all_legs_online</div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblThrowTools">throw_tools</div>
+      <div class="control"><label id="labBallMass">ball_mass</label><span id="ballMassVal">14.0</span><input id="ballMass" type="range" min="1" max="60" step="1" value="14"></div>
+      <div class="control"><label id="labBallSize">ball_size</label><span id="ballSizeVal">0.72</span><input id="ballSize" type="range" min="0.25" max="1.60" step="0.05" value="0.72"></div>
+      <div class="control"><label id="labThrowPower">throw_power</label><span id="throwPowerVal">1.00x</span><input id="throwPower" type="range" min="0.20" max="3.00" step="0.05" value="1.00"></div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblCameraMode">camera_mode</div>
+      <div class="modeGrid">
+        <button data-camera="orbit" class="active">orbit</button>
+        <button data-camera="follow">follow</button>
+        <button data-camera="top">top</button>
+        <button data-camera="foot">foot</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblAutopilot">autopilot</div>
+      <button id="autopilotBtn" style="width:100%;">autopilot_off</button>
+      <div class="phaseDesc" id="autopilotStatus" style="margin-top:8px;">enable_then_click_terrain</div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblVisualLayers">visual_layers</div>
+      <div class="modeGrid">
+        <button data-visual="pressure">pressure</button>
+        <button data-visual="com">COM</button>
+        <button data-visual="support">support</button>
+        <button data-visual="ghost">ghost_feet</button>
+        <button data-visual="shadows" class="active">shadows</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblLivePhase">live_phase</div>
+      <div class="phaseTitle" id="phaseTitle">TRIPOD_A_SWING / TRIPOD_B_STANCE</div>
+      <div class="phaseDesc" id="phaseDesc">LF + RM + LR swing while RF + LM + RR support.</div>
+      <div class="phaseBar"><div class="phaseFill" id="phaseFill"></div></div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblTripodGroups">tripod_groups</div>
+      <div class="tripods">
+        <div class="tripod"><strong id="tripodATitle">A</strong><span id="tripodAText">left_front<br>right_middle<br>left_rear</span></div>
+        <div class="tripod"><strong id="tripodBTitle">B</strong><span id="tripodBText">right_front<br>left_middle<br>right_rear</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="label" id="lblJointLayout">joint_layout</div>
+      <div class="phaseDesc" id="jointText">joint_1 = coxa_yaw<br>joint_2 = femur_pitch<br>joint_3 = tibia_pitch</div>
+    </section>
+  </aside>
+
+  <section class="rightInfo">
+    <div class="label" id="lblRotationAxis">rotation_axis</div>
+    <p id="rotationText">The dashed vertical line is the yaw axis through the body center. The orange ring and curved arrow show turning around the center point.</p>
+    <div class="legend">
+      <div><span class="sw"></span><span id="legendSwing">swing_legs</span></div>
+      <div><span class="sw green"></span><span id="legendStance">stance_legs</span></div>
+      <div><span class="sw orange"></span><span id="legendYaw">yaw_axis_and_turn_ring</span></div>
+    </div>
+  </section>
+
+  <div class="bottomLine">
+    <span><strong id="bBlue">blue</strong> <span id="bBlueText">= swing tripod</span></span>
+    <span><strong id="bGreen">green</strong> <span id="bGreenText">= stance tripod</span></span>
+    <span><strong id="bOrange">orange</strong> <span id="bOrangeText">= yaw axis / turn direction</span></span>
+    <span><strong id="bYellow">yellow</strong> <span id="bYellowText">= high foot pressure / support polygon</span></span>
+    <span><strong id="bRed">red</strong> <span id="bRedText">= overload, damaged leg, or unstable COM</span></span>
+    <span><strong id="bCyan">cyan rings</strong> <span id="bCyanText">= ghost foot landing targets</span></span>
+    <span><strong id="bCom">COM dot</strong> <span id="bComText">= green stable, red unstable</span></span>
+    <span><strong id="bControl">control</strong> <span id="bControlText">= W/S forward/back · A/D strafe · Q/E turn</span></span>
+    <span><strong id="bMouse">mouse</strong> <span id="bMouseText">= orbit</span></span>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const i18n = {
+      en: {
+        titleMain: 'HEXAPOD_3D_GAIT_ANIMATOR',
+        titleDesc: 'checked build · stable control idle · long chassis · ball stabilization demo',
+        topStatJoints: 'JOINTS_PER_LEG = 3',
+        motionStaticBtn: 'STATIC', motionWalkBtn: 'WALK', motionControlBtn: 'CONTROL',
+        lblMovementMode: 'movement_mode', lblMotionFrame: 'motion_frame',
+        motionFrameDesc: 'static = stepping in place · walk = automatic translation · control = WASD/QE physics drive',
+        lblAnimationTuning: 'animation_tuning', labSpeed: 'speed', labStepLength: 'step_length', labLiftHeight: 'lift_height', labBodyHeight: 'body_height', labCoxaLength: 'coxa_length', labFemurLength: 'femur_length', labTibiaLength: 'tibia_length',
+        lblDamage: 'leg_damage', lblThrowTools: 'throw_tools', labBallMass: 'ball_mass', labBallSize: 'ball_size', labThrowPower: 'throw_power', lblCameraMode: 'camera_mode', lblAutopilot: 'autopilot', lblVisualLayers: 'visual_layers',
+        pause: 'pause_animation', resume: 'resume_animation', lblLivePhase: 'live_phase', lblTripodGroups: 'tripod_groups', lblJointLayout: 'joint_layout',
+        jointText: 'joint_1 = coxa_yaw<br>joint_2 = femur_pitch<br>joint_3 = tibia_pitch',
+        lblRotationAxis: 'rotation_axis', rotationText: 'The dashed vertical line is the yaw axis through the body center. The orange ring and curved arrow show turning around the center point.',
+        legendSwing: 'swing_legs', legendStance: 'stance_legs', legendYaw: 'yaw_axis_and_turn_ring',
+        modeForward: 'forward', modeBackward: 'backward', modeStrafeLeft: 'strafe_left', modeStrafeRight: 'strafe_right', modeDiagLeft: 'diag_left', modeDiagRight: 'diag_right', modeTurnCW: 'turn_cw', modeTurnCCW: 'turn_ccw',
+        tripodATitle: 'A', tripodAText: 'left_front<br>right_middle<br>left_rear', tripodBTitle: 'B', tripodBText: 'right_front<br>left_middle<br>right_rear',
+        bBlue: 'blue', bBlueText: '= swing tripod', bGreen: 'green', bGreenText: '= stance tripod', bOrange: 'orange', bOrangeText: '= yaw axis / turn direction', bControl: 'control', bControlText: '= W/S forward/back · A/D strafe · Q/E turn', bMouse: 'mouse', bMouseText: '= orbit',
+        dropBallBtn: 'drop_heavy_ball', ballReady: 'ball_ready', ballFalling: 'ball_falling', ballImpact: 'impact_detected / self_stabilizing',
+        phaseA: 'TRIPOD_A_SWING / TRIPOD_B_STANCE', phaseB: 'TRIPOD_B_SWING / TRIPOD_A_STANCE', phaseADesc: 'LF + RM + LR swing while RF + LM + RR support.', phaseBDesc: 'RF + LM + RR swing while LF + RM + LR support.'
+      },
+      sk: {
+        titleMain: 'HEXAPOD_3D_ANIMATOR_CHODZE',
+        titleDesc: 'skontrolovana verzia · stabilne ovladanie · dlhe telo · test samostabilizacie',
+        topStatJoints: 'KLBY_NA_NOHU = 3',
+        motionStaticBtn: 'STATICKY', motionWalkBtn: 'CHODZA', motionControlBtn: 'OVLADANIE',
+        lblMovementMode: 'rezim_pohybu', lblMotionFrame: 'typ_pohybu',
+        motionFrameDesc: 'staticky = krokuje na mieste · chodza = automaticky sa posuva · ovladanie = WASD/QE',
+        lblAnimationTuning: 'nastavenie_animacie', labSpeed: 'rychlost', labStepLength: 'dlzka_kroku', labLiftHeight: 'vyska_zdvihu', labBodyHeight: 'vyska_tela', labCoxaLength: 'dlzka_coxa', labFemurLength: 'dlzka_femur', labTibiaLength: 'dlzka_tibia',
+        lblDamage: 'poskodenie_noh', lblThrowTools: 'nastroje_hodu', labBallMass: 'hmotnost_gule', labBallSize: 'velkost_gule', labThrowPower: 'sila_hodu', lblCameraMode: 'kamera', lblAutopilot: 'autopilot', lblVisualLayers: 'vrstvy_zobrazenia',
+        pause: 'pozastavit_animaciu', resume: 'obnovit_animaciu', lblLivePhase: 'aktualna_faza', lblTripodGroups: 'tripod_skupiny', lblJointLayout: 'rozlozenie_klbov',
+        jointText: 'klb_1 = coxa_yaw<br>klb_2 = femur_pitch<br>klb_3 = tibia_pitch',
+        lblRotationAxis: 'os_rotacie', rotationText: 'Prerusovana zvisla ciara je os yaw cez stred tela. Oranzovy kruh a zakrivena sipka ukazuju otacanie okolo stredu.',
+        legendSwing: 'svihajuce_nohy', legendStance: 'oporove_nohy', legendYaw: 'os_yaw_a_kruh_otacania',
+        modeForward: 'dopredu', modeBackward: 'dozadu', modeStrafeLeft: 'vlavo', modeStrafeRight: 'vpravo', modeDiagLeft: 'diagonalne_vlavo', modeDiagRight: 'diagonalne_vpravo', modeTurnCW: 'otocit_cw', modeTurnCCW: 'otocit_ccw',
+        tripodATitle: 'A', tripodAText: 'lavy_predny<br>pravy_stredny<br>lavy_zadny', tripodBTitle: 'B', tripodBText: 'pravy_predny<br>lavy_stredny<br>pravy_zadny',
+        bBlue: 'modra', bBlueText: '= tripod vo vzduchu', bGreen: 'zelena', bGreenText: '= oporny tripod', bOrange: 'oranzova', bOrangeText: '= os yaw / smer otacania', bControl: 'ovladanie', bControlText: '= W/S dopredu/dozadu · A/D do stran · Q/E otacanie', bMouse: 'mys', bMouseText: '= otacanie pohladu',
+        dropBallBtn: 'spustit_tazku_gulu', ballReady: 'gula_pripravena', ballFalling: 'gula_pada', ballImpact: 'naraz / samostabilizacia',
+        phaseA: 'TRIPOD_A_SVIH / TRIPOD_B_OPORA', phaseB: 'TRIPOD_B_SVIH / TRIPOD_A_OPORA', phaseADesc: 'LF + RM + LR svihaju, zatial co RF + LM + RR nesu telo.', phaseBDesc: 'RF + LM + RR svihaju, zatial co LF + RM + LR nesu telo.'
+      }
+    };
+
+    const errorBox = document.getElementById('errorBox');
+
+    try {
+      const app = document.getElementById('app');
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf7faff);
+      scene.fog = new THREE.Fog(0xf7faff, 28, 90);
+
+      const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 160);
+      camera.position.set(9.5, 7.6, 14.0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.VSMShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      app.appendChild(renderer.domElement);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.target.set(0, 1.25, 0);
+      controls.minDistance = 5;
+      controls.maxDistance = 42;
+
+      scene.add(new THREE.HemisphereLight(0xffffff, 0xdce3ec, 1.95));
+      const keyLight = new THREE.DirectionalLight(0xffffff, 2.75);
+      keyLight.position.set(12, 16, 11);
+      keyLight.castShadow = true;
+      keyLight.shadow.mapSize.set(4096, 4096);
+      keyLight.shadow.camera.left = -30;
+      keyLight.shadow.camera.right = 30;
+      keyLight.shadow.camera.top = 30;
+      keyLight.shadow.camera.bottom = -30;
+      keyLight.shadow.camera.near = 1;
+      keyLight.shadow.camera.far = 70;
+      keyLight.shadow.bias = -0.00018;
+      keyLight.shadow.normalBias = 0.045;
+      keyLight.shadow.radius = 5;
+      scene.add(keyLight);
+      const fillLight = new THREE.DirectionalLight(0x8eb9ff, 1.35);
+      fillLight.position.set(-9, 8, -8);
+      scene.add(fillLight);
+
+      const rockDefs = [
+        { x: 9.8, z: -9.2, r: 1.15, h: 0.95 },
+        { x: 12.6, z: -3.4, r: 1.25, h: 1.10 },
+        { x: 14.8, z: 3.2, r: 0.95, h: 0.90 },
+        { x: 17.2, z: -2.4, r: 1.55, h: 1.35 },
+        { x: 19.0, z: 8.4, r: 1.25, h: 1.05 },
+        { x: 22.5, z: -8.0, r: 1.65, h: 1.55 },
+        { x: 23.0, z: 5.7, r: 1.15, h: 1.00 },
+        { x: 27.0, z: 0.6, r: 1.30, h: 1.22 },
+        { x: 31.5, z: -7.0, r: 1.85, h: 1.70 },
+        { x: 33.6, z: 2.7, r: 1.20, h: 1.18 },
+        { x: 37.0, z: 7.8, r: 1.35, h: 1.26 },
+        { x: 42.0, z: -1.8, r: 1.55, h: 1.44 }
+      ];
+
+      const terrainGeometry = new THREE.PlaneGeometry(150, 150, 160, 160);
+      const terrainPos = terrainGeometry.attributes.position;
+      for (let i = 0; i < terrainPos.count; i++) {
+        const x = terrainPos.getX(i);
+        const z = -terrainPos.getY(i);
+        terrainPos.setZ(i, terrainHeightAt(x, z));
+      }
+      terrainGeometry.computeVertexNormals();
+      const terrain = new THREE.Mesh(
+        terrainGeometry,
+        new THREE.MeshStandardMaterial({ color: 0x8fb06c, roughness: 0.92, metalness: 0.01 })
+      );
+      terrain.rotation.x = -Math.PI / 2;
+      terrain.receiveShadow = true;
+      scene.add(terrain);
+
+      for (const def of rockDefs) {
+        const rock = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(def.r, 0),
+          new THREE.MeshStandardMaterial({ color: 0x5f6870, roughness: 0.96, metalness: 0.01 })
+        );
+        rock.scale.set(1.0, 0.66 + def.h * 0.34, 0.82);
+        rock.rotation.set(def.h * 0.6, def.x * 0.17, def.z * 0.11);
+        rock.position.set(def.x, terrainHeightAt(def.x, def.z) + def.h * 0.22, def.z);
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        scene.add(rock);
+      }
+
+      const grid = new THREE.GridHelper(100, 100, 0xc2d1e1, 0xe2ebf4);
+      grid.position.y = 0.018;
+      grid.material.transparent = true;
+      grid.material.opacity = 0.42;
+      scene.add(grid);
+
+      const mats = {
+        chassis: new THREE.MeshStandardMaterial({ color: 0x2b3441, roughness: 0.35, metalness: 0.58 }),
+        top: new THREE.MeshStandardMaterial({ color: 0x121a24, roughness: 0.38, metalness: 0.60 }),
+        metal: new THREE.MeshStandardMaterial({ color: 0x99a5b6, roughness: 0.25, metalness: 0.82 }),
+        joint: new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.46, metalness: 0.52 }),
+        rubber: new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.88, metalness: 0.04 }),
+        blue: new THREE.MeshStandardMaterial({ color: 0x0067ff, roughness: 0.32, metalness: 0.38, emissive: 0x00285a, emissiveIntensity: 0.12 }),
+        green: new THREE.MeshStandardMaterial({ color: 0x109a46, roughness: 0.34, metalness: 0.30, emissive: 0x063114, emissiveIntensity: 0.10 }),
+        orange: new THREE.MeshStandardMaterial({ color: 0xff7a00, roughness: 0.35, metalness: 0.36, emissive: 0x6b2a00, emissiveIntensity: 0.12 })
+      };
+
+      function makeShadowTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+        g.addColorStop(0.00, 'rgba(0,0,0,0.72)');
+        g.addColorStop(0.34, 'rgba(0,0,0,0.42)');
+        g.addColorStop(0.68, 'rgba(0,0,0,0.16)');
+        g.addColorStop(1.00, 'rgba(0,0,0,0.00)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 128, 128);
+        return new THREE.CanvasTexture(canvas);
+      }
+
+      const contactShadowTexture = makeShadowTexture();
+      function contactShadow(size, opacity) {
+        const shadow = new THREE.Mesh(
+          new THREE.CircleGeometry(1, 48),
+          new THREE.MeshBasicMaterial({
+            map: contactShadowTexture,
+            transparent: true,
+            opacity,
+            depthWrite: false,
+            color: 0x000000
+          })
+        );
+        shadow.scale.set(size, size, size);
+        shadow.renderOrder = 3;
+        scene.add(shadow);
+        return shadow;
+      }
+
+      function box(w, h, d, mat) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        return mesh;
+      }
+
+      function cyl(r, l, mat, axis = 'y', seg = 28) {
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, seg), mat);
+        if (axis === 'x') mesh.rotation.z = Math.PI / 2;
+        if (axis === 'z') mesh.rotation.x = Math.PI / 2;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        return mesh;
+      }
+
+      function segment(len, thick, mat) {
+        const group = new THREE.Group();
+        const beam = box(len, thick, thick * 0.72, mat);
+        beam.position.x = len / 2;
+        group.add(beam);
+        const j1 = cyl(thick * 0.55, thick * 0.55, mats.joint, 'z');
+        const j2 = cyl(thick * 0.55, thick * 0.55, mats.joint, 'z');
+        j2.position.x = len;
+        group.add(j1, j2);
+        group.userData.baseLen = len;
+        group.userData.thick = thick;
+        return group;
+      }
+
+      function setSegmentLength(group, len) {
+        const baseLen = group.userData.baseLen || len;
+        const beam = group.children[0];
+        const endJoint = group.children[2];
+        beam.scale.x = len / baseLen;
+        beam.position.x = len / 2;
+        endJoint.position.x = len;
+      }
+
+      function makeFootPad(mat) {
+        const group = new THREE.Group();
+        const sole = box(0.58, 0.11, 0.34, mat);
+        sole.position.x = 0.03;
+        group.add(sole);
+        const toe = cyl(0.17, 0.34, mat, 'z', 24);
+        toe.position.x = 0.32;
+        toe.scale.y = 0.36;
+        group.add(toe);
+        const heel = cyl(0.15, 0.32, mat, 'z', 24);
+        heel.position.x = -0.26;
+        heel.scale.y = 0.34;
+        group.add(heel);
+        const treadMat = mats.rubber.clone();
+        const tread1 = box(0.48, 0.035, 0.045, treadMat);
+        const tread2 = box(0.48, 0.035, 0.045, treadMat);
+        tread1.position.set(0.03, -0.072, -0.105);
+        tread2.position.set(0.03, -0.072, 0.105);
+        group.add(tread1, tread2);
+        group.castShadow = true;
+        group.receiveShadow = true;
+        return group;
+      }
+
+      const robot = new THREE.Group();
+      scene.add(robot);
+      const bodyGroup = new THREE.Group();
+      robot.add(bodyGroup);
+
+      const chassis = box(2.55, 0.55, 7.05, mats.chassis);
+      bodyGroup.add(chassis);
+      const topPlate = box(1.62, 0.16, 5.65, mats.top);
+      topPlate.position.y = 0.36;
+      bodyGroup.add(topPlate);
+      for (let z = -2.85; z <= 2.85; z += 1.18) {
+        const slot = box(1.0, 0.05, 0.14, mats.metal);
+        slot.position.set(0, 0.45, z);
+        bodyGroup.add(slot);
+      }
+
+      const legDefs = [
+        { id: 'LF', mountX: -1.38, mountZ: -2.85, side: -1, baseYaw: Math.PI, phase: 0, nominalX: -3.70, nominalZ: -3.28 },
+        { id: 'LM', mountX: -1.45, mountZ:  0.00, side: -1, baseYaw: Math.PI, phase: 1, nominalX: -3.92, nominalZ:  0.00 },
+        { id: 'LR', mountX: -1.38, mountZ:  2.85, side: -1, baseYaw: Math.PI, phase: 0, nominalX: -3.70, nominalZ:  3.28 },
+        { id: 'RF', mountX:  1.38, mountZ: -2.85, side:  1, baseYaw: 0,       phase: 1, nominalX:  3.70, nominalZ: -3.28 },
+        { id: 'RM', mountX:  1.45, mountZ:  0.00, side:  1, baseYaw: 0,       phase: 0, nominalX:  3.92, nominalZ:  0.00 },
+        { id: 'RR', mountX:  1.38, mountZ:  2.85, side:  1, baseYaw: 0,       phase: 1, nominalX:  3.70, nominalZ:  3.28 }
+      ];
+
+      let L1 = 1.05;
+      let L2 = 2.05;
+      let L3 = 2.35;
+      let L3Foot = L3 + 0.10;
+      const footPadClearance = 0.12;
+      const legs = [];
+      const yAxis = new THREE.Vector3(0, 1, 0);
+      const zAxis = new THREE.Vector3(0, 0, 1);
+      const tmp = new THREE.Vector3();
+      const tmp2 = new THREE.Vector3();
+      const tmp3 = new THREE.Vector3();
+      const bodyMatrixInverse = new THREE.Matrix4();
+      const ballMatrixInverse = new THREE.Matrix4();
+      const ballNormalMatrix = new THREE.Matrix3();
+      const bodyHalf = new THREE.Vector3(1.34, 0.54, 3.62);
+      let ballRadius = 0.72;
+      let ballMass = 14.0;
+      let throwPower = 1.0;
+
+      function createLeg(def) {
+        const root = new THREE.Group();
+        root.position.set(def.mountX, 0.02, def.mountZ);
+        root.rotation.y = def.baseYaw;
+        bodyGroup.add(root);
+
+        const mount = cyl(0.28, 0.42, mats.joint, 'y');
+        root.add(mount);
+
+        const coxaYaw = new THREE.Group();
+        root.add(coxaYaw);
+        const coxaSegment = segment(L1, 0.28, mats.metal);
+        coxaYaw.add(coxaSegment);
+
+        const femurPitch = new THREE.Group();
+        femurPitch.position.x = L1;
+        coxaYaw.add(femurPitch);
+        femurPitch.add(cyl(0.26, 0.30, mats.joint, 'z'));
+        const femurSegment = segment(L2, 0.24, mats.metal);
+        femurPitch.add(femurSegment);
+
+        const tibiaPitch = new THREE.Group();
+        tibiaPitch.position.x = L2;
+        femurPitch.add(tibiaPitch);
+        tibiaPitch.add(cyl(0.24, 0.28, mats.joint, 'z'));
+        const tibiaSegment = segment(L3, 0.21, mats.metal);
+        tibiaPitch.add(tibiaSegment);
+
+        const footMat = mats.green.clone();
+        const foot = makeFootPad(footMat);
+        foot.position.x = L3 + 0.10;
+        foot.rotation.z = -0.08;
+        tibiaPitch.add(foot);
+
+        const footRing = new THREE.Mesh(new THREE.TorusGeometry(0.20, 0.02, 10, 48), mats.green);
+        const ringMat = mats.green.clone();
+        footRing.material = ringMat;
+        footRing.rotation.x = Math.PI / 2;
+        footRing.position.y = 0.03;
+        scene.add(footRing);
+        const footShadow = contactShadow(0.84, 0.44);
+        const ghostTarget = new THREE.Mesh(
+          new THREE.RingGeometry(0.28, 0.38, 36),
+          new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.42, side: THREE.DoubleSide })
+        );
+        ghostTarget.rotation.x = -Math.PI / 2;
+        ghostTarget.visible = false;
+        scene.add(ghostTarget);
+
+        const trail = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]),
+          new THREE.LineBasicMaterial({ color: 0x0067ff, transparent: true, opacity: 0.85 })
+        );
+        scene.add(trail);
+
+        return {
+          def, root, coxaYaw, coxaSegment, femurPitch, femurSegment, tibiaPitch, tibiaSegment, foot, footMat, footRing, ringMat, footShadow, ghostTarget, trail,
+          swingState: false,
+          pressure: 0,
+          damaged: false,
+          footWorld: new THREE.Vector3(),
+          actualFootWorld: new THREE.Vector3(),
+          swingStart: new THREE.Vector3(),
+          swingTarget: new THREE.Vector3(),
+          transitionStart: new THREE.Vector3(),
+          transitionTarget: new THREE.Vector3()
+        };
+      }
+      legDefs.forEach(def => legs.push(createLeg(def)));
+
+      const axisGroup = new THREE.Group();
+      scene.add(axisGroup);
+      const axisLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 4.0, 0)]),
+        new THREE.LineDashedMaterial({ color: 0x0067ff, dashSize: 0.18, gapSize: 0.10 })
+      );
+      axisLine.computeLineDistances();
+      axisGroup.add(axisLine);
+      const axisBase = new THREE.Mesh(new THREE.SphereGeometry(0.08, 20, 14), mats.blue);
+      const axisTop = new THREE.Mesh(new THREE.SphereGeometry(0.08, 20, 14), mats.blue);
+      axisTop.position.y = 4.0;
+      axisGroup.add(axisBase, axisTop);
+      const yawRing = new THREE.Mesh(new THREE.TorusGeometry(2.9, 0.022, 14, 96), mats.orange);
+      yawRing.rotation.x = Math.PI / 2;
+      yawRing.position.y = 0.045;
+      axisGroup.add(yawRing);
+      const yawArc = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(new THREE.EllipseCurve(0, 0, 1.55, 1.55, Math.PI * 0.15, Math.PI * 1.45).getPoints(72).map(p => new THREE.Vector3(p.x, 0, p.y))),
+        new THREE.LineBasicMaterial({ color: 0xff7a00 })
+      );
+      yawArc.position.y = 3.35;
+      axisGroup.add(yawArc);
+      const yawHead = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.34, 24), mats.orange);
+      yawHead.position.set(-0.18, 3.35, -1.53);
+      yawHead.rotation.x = Math.PI / 2;
+      yawHead.rotation.z = Math.PI * 0.22;
+      axisGroup.add(yawHead);
+
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(ballRadius, 48, 28), new THREE.MeshStandardMaterial({ color: 0x151b24, roughness: 0.42, metalness: 0.82 }));
+      ball.castShadow = true;
+      ball.receiveShadow = true;
+      ball.visible = false;
+      scene.add(ball);
+      const ballShadow = contactShadow(ballRadius * 1.7, 0.34);
+      ballShadow.visible = false;
+
+      const moveArrow = new THREE.Group();
+      scene.add(moveArrow);
+      const moveShaft = cyl(0.04, 3.2, mats.blue, 'x');
+      moveShaft.position.x = 1.18;
+      moveArrow.add(moveShaft);
+      const moveHead = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.50, 24), mats.blue);
+      moveHead.rotation.z = -Math.PI / 2;
+      moveHead.position.x = 2.95;
+      moveArrow.add(moveHead);
+
+      const comMarker = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 16), new THREE.MeshBasicMaterial({ color: 0xff2b2b }));
+      comMarker.visible = false;
+      scene.add(comMarker);
+      const comLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]),
+        new THREE.LineBasicMaterial({ color: 0xff2b2b, transparent: true, opacity: 0.75 })
+      );
+      comLine.visible = false;
+      scene.add(comLine);
+      const supportLine = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1)]),
+        new THREE.LineBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.82 })
+      );
+      supportLine.visible = false;
+      scene.add(supportLine);
+      const autopilotTarget = new THREE.Mesh(
+        new THREE.RingGeometry(0.45, 0.62, 48),
+        new THREE.MeshBasicMaterial({ color: 0xff2b2b, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+      );
+      autopilotTarget.rotation.x = -Math.PI / 2;
+      autopilotTarget.visible = false;
+      scene.add(autopilotTarget);
+
+      const state = {
+        mode: 'forward', motionFrame: 'static', lang: 'en', speed: 1, step: 1, lift: 0.52, bodyHeight: 1.16,
+        paused: false, t: 0, gaitT: 0, yaw: 0, vel: new THREE.Vector3(), targetVel: new THREE.Vector3(), yawVel: 0, targetYawVel: 0,
+        cmdForward: 0, cmdStrafe: 0, cmdTurn: 0, ballActive: false, ballHit: false, ballContact: false, ballGrabbed: false, ballVel: new THREE.Vector3(),
+        bodyTilt: new THREE.Vector3(), bodyTiltVel: new THREE.Vector3(), bodyOffsetY: 0, bodyOffsetVel: 0,
+        transitionT: 0, transitionDuration: 0, currentBodyY: 1.16, load: 0,
+        recoveryT: 0, stability: 1, cameraMode: 'orbit', autopilot: false, autopilotTarget: new THREE.Vector3(),
+        visuals: { pressure: false, com: false, support: false, ghost: false, shadows: true }
+      };
+
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      const grabPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const grabPoint = new THREE.Vector3();
+      const grabLastPoint = new THREE.Vector3();
+      const grabVelocity = new THREE.Vector3();
+      let grabLastTime = 0;
+
+      const keys = { w:false, a:false, s:false, d:false, q:false, e:false };
+      const modes = {
+        forward: { vx: 0, vz: -1, yaw: 0 }, backward: { vx: 0, vz: 1, yaw: 0 }, strafeLeft: { vx: -1, vz: 0, yaw: 0 }, strafeRight: { vx: 1, vz: 0, yaw: 0 },
+        diagLeft: { vx: -0.72, vz: -0.72, yaw: 0 }, diagRight: { vx: 0.72, vz: -0.72, yaw: 0 }, turnCW: { vx: 0, vz: 0, yaw: -1 }, turnCCW: { vx: 0, vz: 0, yaw: 1 }
+      };
+
+      function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+      function smooth(t) { return t * t * (3 - 2 * t); }
+      function lerp(a, b, t) { return a + (b - a) * t; }
+      function terrainHeightAt(x, z) {
+        const blend = smooth(clamp((x - 3.5) / 9.0, 0, 1));
+        if (blend <= 0) return 0;
+        let h = 0.48 * Math.sin(x * 0.32) + 0.34 * Math.cos(z * 0.42) + 0.24 * Math.sin((x + z) * 0.24);
+        h += 0.38 * Math.sin(x * 0.68 + z * 0.19);
+        for (const rock of rockDefs) {
+          const dx = x - rock.x;
+          const dz = z - rock.z;
+          const d = Math.sqrt(dx * dx + dz * dz);
+          if (d < rock.r) {
+            const u = 1 - d / rock.r;
+            h += rock.h * Math.pow(u, 0.42);
+          }
+        }
+        return Math.max(0, h * blend + 0.18 * blend);
+      }
+      function terrainNormalAt(x, z) {
+        const e = 0.35;
+        const hL = terrainHeightAt(x - e, z);
+        const hR = terrainHeightAt(x + e, z);
+        const hD = terrainHeightAt(x, z - e);
+        const hU = terrainHeightAt(x, z + e);
+        return new THREE.Vector3(hL - hR, e * 2, hD - hU).normalize();
+      }
+      function footGroundHeight(v) { return terrainHeightAt(v.x, v.z) + footPadClearance; }
+      function supportTerrainHeight() {
+        let total = terrainHeightAt(robot.position.x, robot.position.z) * 1.5;
+        let weight = 1.5;
+        let highest = 0;
+        for (const leg of legs) {
+          if (leg.damaged) continue;
+          const h = terrainHeightAt(leg.footWorld.x, leg.footWorld.z);
+          highest = Math.max(highest, h);
+          total += h;
+          weight += 1;
+        }
+        return (total / weight) * 0.72 + highest * 0.28;
+      }
+      function angleLerp(a, b, t) {
+        let d = b - a;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        return a + d * t;
+      }
+      function nominalFoot(def) { return new THREE.Vector3(def.nominalX, 0, def.nominalZ); }
+      function healthyLegs() { return legs.filter(leg => !leg.damaged); }
+      function stanceLegs() { return legs.filter(leg => !leg.damaged && !leg.swingState); }
+      function locomotionSupportFactor() {
+        const healthy = healthyLegs().length;
+        if (healthy <= 0) return 0;
+        const stance = stanceLegs().length;
+        const required = healthy >= 5 ? 3 : Math.min(2, healthy);
+        return clamp(stance / Math.max(1, required), 0, 1);
+      }
+      function controlInputActive() { return keys.w || keys.a || keys.s || keys.d || keys.q || keys.e; }
+
+      function controlVector() {
+        if (!controlInputActive()) {
+          state.cmdForward = 0;
+          state.cmdStrafe = 0;
+          state.cmdTurn = 0;
+          return { v: new THREE.Vector3(0, 0, 0), yaw: 0 };
+        }
+        const f = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+        const s = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+        const turn = (keys.q ? 1 : 0) - (keys.e ? 1 : 0);
+        state.cmdForward = lerp(state.cmdForward, f, 0.14);
+        state.cmdStrafe = lerp(state.cmdStrafe, s, 0.14);
+        state.cmdTurn = lerp(state.cmdTurn, turn, 0.16);
+        const v = new THREE.Vector3(state.cmdStrafe, 0, -state.cmdForward);
+        if (v.lengthSq() > 1) v.normalize();
+        return { v, yaw: state.cmdTurn };
+      }
+
+      function desiredLocalVelocity() {
+        if (state.autopilot && autopilotTarget.visible) {
+          const toTarget = tmp.copy(state.autopilotTarget).sub(robot.position);
+          toTarget.y = 0;
+          const dist = toTarget.length();
+          if (dist < 0.8) {
+            state.autopilot = false;
+            state.targetVel.set(0, 0, 0);
+            state.targetYawVel = 0;
+            autopilotTarget.visible = false;
+            document.getElementById('autopilotBtn').textContent = 'autopilot_off';
+            document.getElementById('autopilotStatus').textContent = 'target_reached';
+            return { v: new THREE.Vector3(0, 0, 0), yaw: 0 };
+          }
+          const local = toTarget.clone().applyAxisAngle(yAxis, -robot.rotation.y);
+          const desiredYaw = Math.atan2(local.x, -local.z);
+          const v = new THREE.Vector3(
+            clamp(local.x * 0.12, -0.65, 0.65),
+            0,
+            -clamp(dist * 0.36, 0.25, 1.0)
+          );
+          if (Math.abs(desiredYaw) > 0.55) v.multiplyScalar(0.35);
+          const damageScale = clamp(healthyLegs().length / 6, 0.35, 1);
+          return { v: v.multiplyScalar(1.04 * state.step * state.speed * damageScale), yaw: clamp(desiredYaw, -1.0, 1.0) * 0.82 * state.speed };
+        }
+        if (state.motionFrame === 'control') {
+          const c = controlVector();
+          const damageScale = clamp(healthyLegs().length / 6, 0.35, 1);
+          return { v: c.v.multiplyScalar(1.22 * state.step * state.speed * damageScale), yaw: c.yaw * 0.92 * state.speed * damageScale };
+        }
+        const m = modes[state.mode];
+        if (state.motionFrame === 'static') return { v: new THREE.Vector3(0, 0, 0), yaw: m.yaw * 0.45 * state.speed };
+        const v = new THREE.Vector3(m.vx, 0, m.vz);
+        const damageScale = clamp(healthyLegs().length / 6, 0.35, 1);
+        if (v.lengthSq() > 0) v.normalize().multiplyScalar(1.05 * state.step * state.speed * damageScale);
+        return { v, yaw: m.yaw * 0.62 * state.speed * damageScale };
+      }
+
+      function footPlacementOffset(def, phase, localVel, yawVel) {
+        const c = (phase - 0.5) * 2;
+        const planar = localVel.clone();
+        const recoveryScale = state.recoveryT > 0 ? 0.45 : 1;
+        if (planar.lengthSq() > 0.0001) planar.normalize().multiplyScalar(c * state.step * 0.58 * recoveryScale);
+        const turnOffset = new THREE.Vector3(yawVel * Math.sign(def.nominalZ || 1) * c * state.step * 0.10 * recoveryScale, 0, -yawVel * def.side * c * state.step * 0.44 * recoveryScale);
+        const out = planar.add(turnOffset);
+        out.x = clamp(out.x, -0.64, 0.64);
+        out.z = clamp(out.z, -0.78, 0.78);
+        return out;
+      }
+
+      function limitFootTarget(def, target) {
+        const safe = target.clone();
+        const minSideX = def.side < 0 ? -3.02 : 3.02;
+        safe.x = def.side < 0 ? Math.min(safe.x, minSideX) : Math.max(safe.x, minSideX);
+        const laneHalf = def.id[1] === 'M' ? 0.82 : 0.64;
+        safe.z = clamp(safe.z, def.nominalZ - laneHalf, def.nominalZ + laneHalf);
+        const maxReach = L1 + L2 + L3Foot - 0.28;
+        const minReach = L1 + 0.72;
+        const dx = safe.x - def.mountX;
+        const dz = safe.z - def.mountZ;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < minReach && dist > 0.0001) {
+          const k = minReach / dist;
+          safe.x = def.mountX + dx * k;
+          safe.z = def.mountZ + dz * k;
+        }
+        if (dist > maxReach) {
+          const k = maxReach / dist;
+          safe.x = def.mountX + dx * k;
+          safe.z = def.mountZ + dz * k;
+        }
+        return safe;
+      }
+
+      function updateLegGeometry() {
+        L3Foot = L3 + 0.10;
+        for (const leg of legs) {
+          setSegmentLength(leg.coxaSegment, L1);
+          leg.femurPitch.position.x = L1;
+          setSegmentLength(leg.femurSegment, L2);
+          leg.tibiaPitch.position.x = L2;
+          setSegmentLength(leg.tibiaSegment, L3);
+          leg.foot.position.x = L3Foot;
+        }
+        startFootTransition(0.28);
+      }
+
+      function solveIK(leg, targetBodyLocal, swing) {
+        const limited = limitFootTarget(leg.def, targetBodyLocal);
+        limited.y = targetBodyLocal.y;
+        tmp.copy(limited).sub(leg.root.position);
+        tmp.applyAxisAngle(yAxis, -leg.def.baseYaw);
+        const yawLimit = leg.def.id[1] === 'M' ? 0.78 : 0.66;
+        let yaw = clamp(Math.atan2(tmp.z, tmp.x), -yawLimit, yawLimit);
+        const horizontal = Math.sqrt(tmp.x * tmp.x + tmp.z * tmp.z);
+        const x = horizontal - L1;
+        const y = tmp.y;
+        const d = clamp(Math.sqrt(x * x + y * y), 0.92, L2 + L3Foot - 0.22);
+        const a = Math.atan2(y, x);
+        const b = Math.acos(clamp((L2 * L2 + d * d - L3Foot * L3Foot) / (2 * L2 * d), -1, 1));
+        let femur = clamp(a + b, -1.22, 0.86);
+        const knee = Math.acos(clamp((L2 * L2 + L3Foot * L3Foot - d * d) / (2 * L2 * L3Foot), -1, 1));
+        const tibia = clamp(-(Math.PI - knee), -2.08, -0.46);
+        const blend = swing ? 0.42 : 0.68;
+        leg.coxaYaw.rotation.y = angleLerp(leg.coxaYaw.rotation.y, yaw, blend);
+        leg.femurPitch.rotation.z = angleLerp(leg.femurPitch.rotation.z, femur, blend);
+        leg.tibiaPitch.rotation.z = angleLerp(leg.tibiaPitch.rotation.z, tibia, blend);
+        if (!leg.damaged) {
+          leg.footMat.color.set(swing ? 0x0067ff : 0x109a46);
+          leg.ringMat.color.set(swing ? 0x0067ff : 0x109a46);
+        }
+      }
+
+      function syncFootContactVisuals(leg) {
+        leg.foot.updateWorldMatrix(true, false);
+        leg.foot.getWorldPosition(leg.actualFootWorld);
+        const contactX = leg.actualFootWorld.x;
+        const contactZ = leg.actualFootWorld.z;
+        leg.footRing.position.set(contactX, terrainHeightAt(contactX, contactZ) + 0.035, contactZ);
+      }
+
+      function updateTrail(leg, p0World, p1World, swing) {
+        const pts = [];
+        for (let i = 0; i <= 26; i++) {
+          const u = i / 26;
+          const p = p0World.clone().lerp(p1World, u);
+          p.y = terrainHeightAt(p.x, p.z) + 0.04;
+          pts.push(p);
+        }
+        leg.trail.geometry.dispose();
+        leg.trail.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+        leg.trail.material.opacity = swing ? 0.85 : 0.14;
+        leg.trail.material.color.set(swing ? 0x0067ff : 0x109a46);
+      }
+
+      function updatePhaseUI(cycle) {
+        document.getElementById('phaseFill').style.width = `${(cycle * 100).toFixed(0)}%`;
+        const t = i18n[state.lang];
+        const swingA = cycle < 0.5;
+        document.getElementById('phaseTitle').textContent = swingA ? t.phaseA : t.phaseB;
+        document.getElementById('phaseDesc').textContent = swingA ? t.phaseADesc : t.phaseBDesc;
+      }
+
+      function updateKeyUI() {
+        for (const k of Object.keys(keys)) {
+          const el = document.getElementById('key' + k.toUpperCase());
+          if (el) el.classList.toggle('on', keys[k]);
+        }
+      }
+
+      function updateDirectionVisuals(currentBodyY) {
+        axisGroup.position.set(robot.position.x, 0, robot.position.z);
+        moveArrow.position.set(robot.position.x, currentBodyY + 1.35, robot.position.z);
+        const speed = state.vel.length();
+        if (speed > 0.05) {
+          moveArrow.visible = true;
+          const angle = Math.atan2(state.vel.x, state.vel.z) + Math.PI / 2 + robot.rotation.y;
+          moveArrow.rotation.set(0, angle, 0);
+        } else {
+          moveArrow.visible = false;
+        }
+        const turnSign = Math.sign(state.yawVel || modes[state.mode].yaw || 1);
+        yawArc.material.color.set(turnSign > 0 ? 0xff7a00 : 0x0067ff);
+        yawHead.material = turnSign > 0 ? mats.orange : mats.blue;
+        yawHead.position.set(turnSign > 0 ? 0.18 : -0.18, 3.35, -1.53);
+        yawHead.rotation.z = turnSign > 0 ? -Math.PI * 0.22 : Math.PI * 0.22;
+      }
+
+      function placeContactShadow(shadow, x, z, size, opacity) {
+        const y = terrainHeightAt(x, z) + 0.026;
+        shadow.visible = true;
+        shadow.position.set(x, y, z);
+        shadow.quaternion.setFromUnitVectors(zAxis, terrainNormalAt(x, z));
+        shadow.scale.set(size, size, size);
+        shadow.material.opacity = opacity;
+      }
+
+      function updateContactShadows() {
+        if (!state.visuals.shadows) {
+          for (const leg of legs) leg.footShadow.visible = false;
+          ballShadow.visible = false;
+          return;
+        }
+        for (const leg of legs) {
+          const stance = !leg.swingState;
+          const p = leg.actualFootWorld.lengthSq() > 0 ? leg.actualFootWorld : leg.footWorld;
+          placeContactShadow(
+            leg.footShadow,
+            p.x,
+            p.z,
+            stance ? 0.94 : 0.62,
+            stance ? 0.58 : 0.22
+          );
+        }
+        if (!ball.visible) {
+          ballShadow.visible = false;
+          return;
+        }
+        const groundY = terrainHeightAt(ball.position.x, ball.position.z);
+        const height = Math.max(0, ball.position.y - groundY - ballRadius);
+        const fade = clamp(1 - height / 6.0, 0.06, 0.42);
+        const size = ballRadius * lerp(1.3, 2.35, clamp(height / 5.0, 0, 1));
+        placeContactShadow(ballShadow, ball.position.x, ball.position.z, size, fade);
+      }
+
+      function hull2D(points) {
+        const sorted = points.slice().sort((a, b) => a.x === b.x ? a.z - b.z : a.x - b.x);
+        if (sorted.length <= 2) return sorted;
+        const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+        const lower = [];
+        for (const p of sorted) {
+          while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+          lower.push(p);
+        }
+        const upper = [];
+        for (let i = sorted.length - 1; i >= 0; i--) {
+          const p = sorted[i];
+          while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+          upper.push(p);
+        }
+        lower.pop();
+        upper.pop();
+        return lower.concat(upper);
+      }
+
+      function pointInPolygon2D(p, poly) {
+        if (poly.length < 3) return false;
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const pi = poly[i], pj = poly[j];
+          const intersect = ((pi.z > p.z) !== (pj.z > p.z)) && (p.x < (pj.x - pi.x) * (p.z - pi.z) / ((pj.z - pi.z) || 0.00001) + pi.x);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }
+
+      function updateStabilityVisuals(dt) {
+        if (state.recoveryT > 0 && !state.paused) state.recoveryT = Math.max(0, state.recoveryT - dt);
+        const com = new THREE.Vector3(robot.position.x, state.currentBodyY + 0.38, robot.position.z);
+        com.x += -state.bodyTilt.z * 1.25;
+        com.z += state.bodyTilt.x * 1.25;
+        comMarker.visible = state.visuals.com;
+        comLine.visible = state.visuals.com;
+        comMarker.position.copy(com);
+        comLine.geometry.dispose();
+        comLine.geometry = new THREE.BufferGeometry().setFromPoints([
+          com,
+          new THREE.Vector3(com.x, terrainHeightAt(com.x, com.z) + 0.05, com.z)
+        ]);
+
+        const healthyCount = healthyLegs().length;
+        const support = legs.filter(leg => !leg.damaged && !leg.swingState).map(leg => {
+          const p = leg.actualFootWorld.lengthSq() > 0 ? leg.actualFootWorld : leg.footWorld;
+          return { x: p.x, z: p.z };
+        });
+        const hull = hull2D(support);
+        if (state.visuals.support && hull.length >= 3) {
+          const pts = hull.map(p => new THREE.Vector3(p.x, terrainHeightAt(p.x, p.z) + 0.08, p.z));
+          supportLine.visible = true;
+          supportLine.geometry.dispose();
+          supportLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+        } else {
+          supportLine.visible = false;
+        }
+
+        const com2 = { x: com.x, z: com.z };
+        const tiltOk = Math.abs(state.bodyTilt.x) < 0.34 && Math.abs(state.bodyTilt.z) < 0.38;
+        const polygonStable = hull.length >= 3 && pointInPolygon2D(com2, hull);
+        const damagedFallbackStable = healthyCount < 6 && support.length >= Math.min(2, healthyCount) && tiltOk;
+        const stable = tiltOk && (polygonStable || damagedFallbackStable);
+        state.stability = lerp(state.stability, stable ? 1 : 0, stable ? 0.08 : 0.22);
+        comMarker.material.color.set(stable ? 0x10c45a : 0xff2b2b);
+        const severeUnstable = !tiltOk || (healthyCount >= 5 && support.length < 3) || (healthyCount < 5 && support.length < Math.min(2, healthyCount));
+        if (severeUnstable && !state.paused && state.recoveryT <= 0.05) state.recoveryT = 0.55;
+
+        const supportCount = Math.max(1, support.length);
+        for (const leg of legs) {
+          let pressure = 0;
+          if (leg.damaged) pressure = 1.25;
+          else if (!leg.swingState) {
+            const p = leg.actualFootWorld.lengthSq() > 0 ? leg.actualFootWorld : leg.footWorld;
+            const dx = p.x - com.x;
+            const dz = p.z - com.z;
+            pressure = clamp(0.32 + 1.7 / (Math.sqrt(dx * dx + dz * dz) + 0.8) + state.load / ballMass * 0.55 + (6 - supportCount) * 0.13, 0, 1.35);
+          }
+          leg.pressure = lerp(leg.pressure, pressure, 0.18);
+          const c = new THREE.Color();
+          if (leg.damaged) c.set(0x6b1f1f);
+          else if (!state.visuals.pressure) c.set(leg.swingState ? 0x0067ff : 0x109a46);
+          else if (leg.swingState) c.set(0x0067ff);
+          else if (leg.pressure < 0.62) c.set(0x109a46);
+          else if (leg.pressure < 0.95) c.set(0xffcc00);
+          else c.set(0xff2b2b);
+        leg.ringMat.color.copy(c);
+        leg.footMat.color.copy(c);
+        leg.footMat.emissive.copy(c).multiplyScalar(0.06);
+          leg.ghostTarget.visible = state.visuals.ghost;
+          leg.ghostTarget.material.color.set(leg.damaged ? 0x6b1f1f : 0x00aaff);
+          leg.ghostTarget.material.opacity = leg.damaged ? 0.18 : 0.42;
+        }
+      }
+
+      function adaptiveBodyHeight() {
+        let maxHeight = Infinity;
+        for (const leg of healthyLegs()) {
+          const dx = leg.def.nominalX - leg.def.mountX;
+          const dz = leg.def.nominalZ - leg.def.mountZ;
+          const planar = Math.max(0.2, Math.sqrt(dx * dx + dz * dz) - L1);
+          const reach = L2 + L3Foot - 0.18;
+          maxHeight = Math.min(maxHeight, Math.sqrt(Math.max(0.35, reach * reach - planar * planar)));
+        }
+        if (!Number.isFinite(maxHeight)) maxHeight = state.bodyHeight;
+        const minHeight = clamp((L2 + L3Foot) * 0.16, 0.45, 1.35);
+        return clamp(state.bodyHeight, Math.min(minHeight, maxHeight), maxHeight);
+      }
+
+      function validNumber(v) { return Number.isFinite(v) && !Number.isNaN(v); }
+      function sanitizeVector(v, fallback = 0) {
+        if (!validNumber(v.x)) v.x = fallback;
+        if (!validNumber(v.y)) v.y = fallback;
+        if (!validNumber(v.z)) v.z = fallback;
+      }
+      function sanitizePhysics() {
+        sanitizeVector(state.vel);
+        sanitizeVector(state.targetVel);
+        sanitizeVector(state.ballVel);
+        sanitizeVector(state.bodyTilt);
+        sanitizeVector(state.bodyTiltVel);
+        if (!validNumber(state.yaw)) state.yaw = 0;
+        if (!validNumber(state.yawVel)) state.yawVel = 0;
+        if (!validNumber(state.bodyOffsetY)) state.bodyOffsetY = 0;
+        if (!validNumber(state.bodyOffsetVel)) state.bodyOffsetVel = 0;
+        if (!validNumber(state.gaitT)) state.gaitT = 0;
+        state.bodyOffsetY = clamp(state.bodyOffsetY, -0.55, 0.18);
+        state.bodyOffsetVel = clamp(state.bodyOffsetVel, -3.5, 2.0);
+        state.bodyTilt.x = clamp(state.bodyTilt.x, -0.55, 0.55);
+        state.bodyTilt.z = clamp(state.bodyTilt.z, -0.55, 0.55);
+        state.bodyTiltVel.x = clamp(state.bodyTiltVel.x, -3.0, 3.0);
+        state.bodyTiltVel.z = clamp(state.bodyTiltVel.z, -3.0, 3.0);
+        state.vel.clampLength(0, 5.0);
+        state.ballVel.clampLength(0, 36);
+      }
+
+      function applyLanguage() {
+        const t = i18n[state.lang];
+        const ids = ['titleMain','titleDesc','topStatJoints','motionStaticBtn','motionWalkBtn','motionControlBtn','dropBallBtn','lblMovementMode','lblMotionFrame','motionFrameDesc','lblAnimationTuning','labSpeed','labStepLength','labLiftHeight','labBodyHeight','labCoxaLength','labFemurLength','labTibiaLength','lblDamage','lblThrowTools','labBallMass','labBallSize','labThrowPower','lblCameraMode','lblAutopilot','lblVisualLayers','lblLivePhase','lblTripodGroups','lblJointLayout','jointText','lblRotationAxis','rotationText','legendSwing','legendStance','legendYaw','modeForward','modeBackward','modeStrafeLeft','modeStrafeRight','modeDiagLeft','modeDiagRight','modeTurnCW','modeTurnCCW','tripodATitle','tripodAText','tripodBTitle','tripodBText','bBlue','bBlueText','bGreen','bGreenText','bOrange','bOrangeText','bControl','bControlText','bMouse','bMouseText'];
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          if (!el || t[id] === undefined) continue;
+          if (id === 'jointText' || id === 'tripodAText' || id === 'tripodBText') el.innerHTML = t[id];
+          else el.textContent = t[id];
+        }
+        document.getElementById('pauseBtn').textContent = state.paused ? t.resume : t.pause;
+        document.getElementById('ballStatus').textContent = state.ballActive ? (state.ballHit ? t.ballImpact : t.ballFalling) : t.ballReady;
+        updatePhaseUI((state.gaitT % 2) / 2);
+      }
+
+      function updateDamageStatus() {
+        const damaged = legs.filter(leg => leg.damaged).map(leg => leg.def.id);
+        document.getElementById('damageStatus').textContent = damaged.length ? `damaged: ${damaged.join(', ')}` : 'all_legs_online';
+      }
+
+      function updateCameraMode(dt, currentBodyY) {
+        if (state.cameraMode === 'orbit' || state.ballGrabbed) return;
+        const target = tmp.copy(robot.position).setY(currentBodyY * 0.74);
+        let desiredPos;
+        if (state.cameraMode === 'top') {
+          desiredPos = tmp2.set(robot.position.x, currentBodyY + 24, robot.position.z + 0.01);
+        } else if (state.cameraMode === 'foot') {
+          const leg = healthyLegs()[0] || legs[0];
+          desiredPos = tmp2.set(leg.footWorld.x + leg.def.side * 1.8, leg.footWorld.y + 1.1, leg.footWorld.z + 2.2);
+          target.set(leg.footWorld.x, leg.footWorld.y + 0.35, leg.footWorld.z);
+        } else {
+          const back = new THREE.Vector3(0, 4.8, 10.5).applyAxisAngle(yAxis, robot.rotation.y);
+          desiredPos = tmp2.copy(robot.position).add(back).setY(currentBodyY + 5.2);
+        }
+        const k = clamp(dt * 3.2, 0, 1);
+        camera.position.lerp(desiredPos, k);
+        controls.target.lerp(target, k);
+      }
+
+      function setAutopilotTargetFromPointer(e) {
+        if (!state.autopilot) return false;
+        setPointerFromEvent(e);
+        const hit = raycaster.intersectObject(terrain, false)[0];
+        if (!hit) return false;
+        state.autopilotTarget.copy(hit.point);
+        autopilotTarget.position.set(hit.point.x, terrainHeightAt(hit.point.x, hit.point.z) + 0.12, hit.point.z);
+        autopilotTarget.visible = true;
+        document.getElementById('autopilotStatus').textContent = `target ${hit.point.x.toFixed(1)}, ${hit.point.z.toFixed(1)}`;
+        document.querySelectorAll('[data-motion]').forEach(b => b.classList.remove('active'));
+        document.querySelector('[data-motion="walk"]').classList.add('active');
+        state.motionFrame = 'walk';
+        return true;
+      }
+
+      function resetFeetToCurrentPose() {
+        robot.updateMatrixWorld(true);
+        bodyGroup.position.y = state.currentBodyY || state.bodyHeight;
+        bodyGroup.updateMatrixWorld(true);
+        for (const leg of legs) {
+          const startLocal = limitFootTarget(leg.def, nominalFoot(leg.def)).setY(-adaptiveBodyHeight());
+          const w = bodyGroup.localToWorld(startLocal.clone());
+          leg.footWorld.copy(w);
+          leg.footWorld.y = footGroundHeight(leg.footWorld);
+          leg.swingStart.copy(leg.footWorld);
+          leg.swingTarget.copy(leg.footWorld);
+          leg.transitionStart.copy(leg.footWorld);
+          leg.transitionTarget.copy(leg.footWorld);
+          leg.swingState = false;
+        }
+        state.transitionT = 0;
+        state.transitionDuration = 0;
+      }
+
+      function startFootTransition(duration = 0.36) {
+        robot.updateMatrixWorld(true);
+        bodyGroup.updateMatrixWorld(true);
+        for (const leg of legs) {
+          leg.transitionStart.copy(leg.footWorld);
+          const neutralLocal = limitFootTarget(leg.def, nominalFoot(leg.def)).setY(-adaptiveBodyHeight());
+          leg.transitionTarget.copy(bodyGroup.localToWorld(neutralLocal.clone()));
+          leg.transitionTarget.y = footGroundHeight(leg.transitionTarget);
+          leg.swingState = false;
+          leg.swingStart.copy(leg.transitionStart);
+          leg.swingTarget.copy(leg.transitionTarget);
+        }
+        state.transitionDuration = duration;
+        state.transitionT = duration;
+      }
+
+      function setMotionFrame(nextFrame, transitionDuration = 0.36) {
+        if (state.motionFrame === nextFrame) return;
+        state.motionFrame = nextFrame;
+        state.vel.multiplyScalar(0.35);
+        state.yawVel *= 0.35;
+        state.targetVel.set(0, 0, 0);
+        state.targetYawVel = 0;
+        state.cmdForward = 0;
+        state.cmdStrafe = 0;
+        state.cmdTurn = 0;
+        if (nextFrame === 'static') {
+          robot.position.set(0, 0, 0);
+          controls.target.set(0, state.bodyHeight * 0.7, 0);
+        }
+        startFootTransition(transitionDuration);
+      }
+
+      function dropBall() {
+        ball.visible = true;
+        robot.updateMatrixWorld(true);
+        bodyGroup.updateMatrixWorld(true);
+        ball.position.copy(bodyGroup.localToWorld(new THREE.Vector3(0.15, 6.8, -0.25)));
+        state.ballVel.copy(state.vel.clone().applyAxisAngle(yAxis, robot.rotation.y));
+        state.ballVel.y = -0.35;
+        state.ballVel.x += 0.08;
+        state.ballVel.z += 0.02;
+        state.ballActive = true;
+        state.ballHit = false;
+        state.ballContact = false;
+        state.ballGrabbed = false;
+        document.getElementById('ballStatus').textContent = i18n[state.lang].ballFalling;
+      }
+
+      function updateBall(dt) {
+        if (!state.ballActive || state.ballGrabbed) return;
+        state.ballContact = false;
+        const speedSteps = Math.ceil((state.ballVel.length() * dt) / Math.max(0.12, ballRadius * 0.35));
+        const steps = clamp(Math.max(Math.ceil(dt / 0.008), speedSteps), 1, 14);
+        const h = dt / steps;
+        for (let i = 0; i < steps; i++) {
+          state.ballVel.y -= 9.8 * h;
+          state.ballVel.clampLength(0, 36);
+          ball.position.addScaledVector(state.ballVel, h);
+          collideBallWithBody();
+          const groundY = terrainHeightAt(ball.position.x, ball.position.z) + ballRadius;
+          if (ball.position.y < groundY) {
+            const normal = terrainNormalAt(ball.position.x, ball.position.z);
+            ball.position.y = groundY;
+            const intoGround = state.ballVel.dot(normal);
+            if (intoGround < 0) state.ballVel.addScaledVector(normal, -(1.26 * intoGround));
+            if (state.ballVel.y < 0) state.ballVel.y *= -0.28;
+            state.ballVel.x *= 0.80;
+            state.ballVel.z *= 0.80;
+            if (Math.abs(state.ballVel.y) < 0.18) state.ballVel.y = 0;
+          }
+          state.ballVel.clampLength(0, 36);
+        }
+        if (state.ballContact) {
+          state.load = lerp(state.load, ballMass, 0.12);
+          state.bodyOffsetVel -= 0.10;
+        }
+        if (ball.position.length() > 70) {
+          state.ballActive = false;
+          ball.visible = false;
+          document.getElementById('ballStatus').textContent = i18n[state.lang].ballReady;
+        }
+      }
+
+      function collideBallWithBody() {
+        bodyGroup.updateMatrixWorld(true);
+        ballMatrixInverse.copy(bodyGroup.matrixWorld).invert();
+        ballNormalMatrix.getNormalMatrix(bodyGroup.matrixWorld);
+        const localCenter = tmp.copy(ball.position).applyMatrix4(ballMatrixInverse);
+        const closest = tmp2.set(
+          clamp(localCenter.x, -bodyHalf.x, bodyHalf.x),
+          clamp(localCenter.y, -bodyHalf.y, bodyHalf.y),
+          clamp(localCenter.z, -bodyHalf.z, bodyHalf.z)
+        );
+        const localDelta = tmp3.copy(localCenter).sub(closest);
+        let dist = localDelta.length();
+        if (dist >= ballRadius) return;
+
+        if (dist < 0.0001) {
+          const px = bodyHalf.x - Math.abs(localCenter.x);
+          const py = bodyHalf.y - Math.abs(localCenter.y);
+          const pz = bodyHalf.z - Math.abs(localCenter.z);
+          localDelta.set(0, 0, 0);
+          if (py <= px && py <= pz) localDelta.y = localCenter.y >= 0 ? 1 : -1;
+          else if (px <= pz) localDelta.x = localCenter.x >= 0 ? 1 : -1;
+          else localDelta.z = localCenter.z >= 0 ? 1 : -1;
+          dist = 0.0001;
+        }
+
+        const localNormal = localDelta.clone().normalize();
+        const normal = localNormal.clone().applyMatrix3(ballNormalMatrix).normalize();
+        const penetration = ballRadius - dist;
+        ball.position.addScaledVector(normal, penetration + 0.003);
+
+        const incoming = state.ballVel.dot(normal);
+        const topContact = localNormal.y > 0.45 && localCenter.y > 0;
+        if (topContact) state.ballContact = true;
+        if (incoming < 0) {
+          const hitX = localCenter.x;
+          const hitZ = localCenter.z;
+          const impact = (-incoming * 4.8 + penetration * 36) * ballMass;
+          const restitution = topContact ? 0.06 : 0.26;
+          state.ballVel.addScaledVector(normal, -((1 + restitution) * incoming));
+          const tangent = tmp.copy(state.ballVel).addScaledVector(normal, -state.ballVel.dot(normal));
+          state.ballVel.addScaledVector(tangent, topContact ? -0.42 : -0.18);
+          state.bodyOffsetVel -= clamp(impact * 0.0014, 0.08, 1.45);
+          state.bodyTiltVel.x += clamp(hitZ * impact * 0.00052, -1.05, 1.05);
+          state.bodyTiltVel.z += clamp(-hitX * impact * 0.00070, -1.15, 1.15);
+          state.load = clamp(state.load + impact * 0.014, 0, ballMass);
+          state.ballHit = true;
+          document.getElementById('ballStatus').textContent = i18n[state.lang].ballImpact;
+        } else if (topContact) {
+          const hitX = localCenter.x;
+          const hitZ = localCenter.z;
+          state.bodyOffsetVel -= 0.055;
+          state.bodyTiltVel.x += clamp(hitZ * 0.012, -0.08, 0.08);
+          state.bodyTiltVel.z += clamp(-hitX * 0.016, -0.10, 0.10);
+        }
+      }
+
+      function setPointerFromEvent(e) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+      }
+
+      function beginBallGrab(e) {
+        setPointerFromEvent(e);
+        const hit = ball.visible ? raycaster.intersectObject(ball, false)[0] : null;
+        if (!hit) {
+          setAutopilotTargetFromPointer(e);
+          return;
+        }
+        e.preventDefault();
+        try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+        controls.enabled = false;
+        state.ballGrabbed = true;
+        state.ballActive = true;
+        state.ballContact = false;
+        state.ballHit = false;
+        state.ballVel.set(0, 0, 0);
+        camera.getWorldDirection(tmp);
+        grabPlane.setFromNormalAndCoplanarPoint(tmp, ball.position);
+        grabLastPoint.copy(ball.position);
+        grabVelocity.set(0, 0, 0);
+        grabLastTime = performance.now() * 0.001;
+        document.getElementById('ballStatus').textContent = 'grabbed / throw_on_release';
+      }
+
+      function dragBall(e) {
+        if (!state.ballGrabbed) return;
+        setPointerFromEvent(e);
+        if (!raycaster.ray.intersectPlane(grabPlane, grabPoint)) return;
+        const now = performance.now() * 0.001;
+        const dt = Math.max(0.016, now - grabLastTime);
+        const minY = terrainHeightAt(grabPoint.x, grabPoint.z) + ballRadius;
+        grabPoint.y = Math.max(grabPoint.y, minY);
+        grabVelocity.copy(grabPoint).sub(grabLastPoint).multiplyScalar(1 / dt);
+        grabVelocity.clampLength(0, 18);
+        ball.position.copy(grabPoint);
+        grabLastPoint.copy(grabPoint);
+        grabLastTime = now;
+      }
+
+      function releaseBall(e) {
+        if (!state.ballGrabbed) return;
+        try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
+        controls.enabled = state.cameraMode === 'orbit';
+        state.ballGrabbed = false;
+        state.ballActive = true;
+        state.ballVel.copy(grabVelocity).multiplyScalar(throwPower);
+        if (state.ballVel.length() < 0.25) state.ballVel.y = -0.15;
+        document.getElementById('ballStatus').textContent = i18n[state.lang].ballFalling;
+      }
+
+      resetFeetToCurrentPose();
+
+      const clock = new THREE.Clock();
+      function animate() {
+        requestAnimationFrame(animate);
+        const dt = Math.min(clock.getDelta(), 0.05);
+        sanitizePhysics();
+        const controlIdle = state.motionFrame === 'control' && !controlInputActive();
+        const desired = controlIdle ? { v: new THREE.Vector3(0, 0, 0), yaw: 0 } : desiredLocalVelocity();
+        state.targetVel.copy(desired.v);
+        state.targetYawVel = desired.yaw;
+        if (controlIdle) {
+          state.vel.set(0, 0, 0);
+          state.yawVel = 0;
+        } else {
+          state.vel.lerp(state.targetVel, state.motionFrame === 'control' ? 0.16 : 0.12);
+          state.yawVel = lerp(state.yawVel, state.targetYawVel, state.motionFrame === 'control' ? 0.16 : 0.14);
+        }
+
+        if (!state.paused) {
+          state.t += dt * state.speed;
+          if (state.transitionT > 0) state.transitionT = Math.max(0, state.transitionT - dt);
+          const driveAmount = state.vel.length() + Math.abs(state.yawVel) * 0.95;
+          let gaitSpeed = clamp(0.24 + driveAmount * 0.86, 0.0, 2.3) * state.speed;
+          if (controlIdle || state.transitionT > 0) gaitSpeed = 0;
+          if (state.recoveryT > 0) gaitSpeed *= 0.28;
+          state.gaitT += dt * gaitSpeed;
+          const supportFactor = locomotionSupportFactor();
+          if (state.recoveryT > 0) {
+            state.vel.multiplyScalar(0.96);
+            state.yawVel *= 0.96;
+          }
+          if (state.motionFrame !== 'static' && !controlIdle) {
+            const stanceDrive = gaitSpeed > 0 ? supportFactor : 0;
+            robot.position.add(state.vel.clone().applyAxisAngle(yAxis, robot.rotation.y).multiplyScalar(dt * stanceDrive * (state.recoveryT > 0 ? 0.35 : 1)));
+          }
+          state.yaw += state.yawVel * dt * Math.max(0.25, supportFactor);
+        }
+
+        robot.rotation.y = state.yaw;
+        const cycle = (state.gaitT % 2) / 2;
+        const bobDrive = clamp(state.vel.length() + Math.abs(state.yawVel), 0.15, 1.6);
+        if (!state.paused) {
+          const loadTarget = -clamp(state.load / ballMass, 0, 1) * 0.34;
+          state.bodyOffsetVel += ((loadTarget - state.bodyOffsetY) * 24.0 - state.bodyOffsetVel * 7.2) * dt;
+          state.bodyOffsetY = clamp(state.bodyOffsetY + state.bodyOffsetVel * dt, -0.48, 0.10);
+          state.load = Math.max(0, state.load - dt * (state.ballContact ? 0.35 : 4.0));
+        }
+        const terrainBase = supportTerrainHeight();
+        const currentBodyY = terrainBase + adaptiveBodyHeight() + state.bodyOffsetY + Math.sin(state.gaitT * Math.PI * 2) * 0.018 * bobDrive;
+        state.currentBodyY = currentBodyY;
+
+        state.bodyTiltVel.x += (-state.bodyTilt.x * 8.5 - state.bodyTiltVel.x * 4.6) * dt;
+        state.bodyTiltVel.z += (-state.bodyTilt.z * 8.5 - state.bodyTiltVel.z * 4.6) * dt;
+        if (!state.paused) {
+          state.bodyTilt.x = clamp(state.bodyTilt.x + state.bodyTiltVel.x * dt, -0.42, 0.42);
+          state.bodyTilt.z = clamp(state.bodyTilt.z + state.bodyTiltVel.z * dt, -0.46, 0.46);
+        }
+
+        bodyGroup.position.y = currentBodyY;
+        const terrainNormal = terrainNormalAt(robot.position.x, robot.position.z);
+        const slopePitch = clamp(Math.atan2(terrainNormal.z, terrainNormal.y), -0.18, 0.18);
+        const slopeRoll = clamp(-Math.atan2(terrainNormal.x, terrainNormal.y), -0.18, 0.18);
+        bodyGroup.rotation.x = Math.cos(state.gaitT * 1.8) * 0.008 * bobDrive + state.bodyTilt.x + slopePitch;
+        bodyGroup.rotation.z = Math.sin(state.gaitT * 2.0) * 0.012 * bobDrive + state.bodyTilt.z + slopeRoll;
+        robot.updateMatrixWorld(true);
+        updateBall(dt);
+
+        for (const leg of legs) {
+          const isA = leg.def.phase === 0;
+          const legPhase = (cycle + (isA ? 0 : 0.5)) % 1;
+          let swing = legPhase < 0.5;
+          const p = swing ? smooth(legPhase / 0.5) : smooth((legPhase - 0.5) / 0.5);
+
+          if (leg.damaged) {
+            swing = false;
+            const limpLocal = new THREE.Vector3(
+              leg.def.mountX + leg.def.side * 1.10,
+              -adaptiveBodyHeight() * 0.48,
+              leg.def.mountZ
+            );
+            const limpWorld = bodyGroup.localToWorld(limpLocal);
+            limpWorld.y = Math.max(limpWorld.y, footGroundHeight(limpWorld));
+            leg.footWorld.lerp(limpWorld, 0.22);
+            leg.swingState = false;
+            leg.swingStart.copy(leg.footWorld);
+            leg.swingTarget.copy(leg.footWorld);
+          } else if (state.transitionT > 0 && state.transitionDuration > 0) {
+            swing = false;
+            const u = smooth(1 - state.transitionT / state.transitionDuration);
+            leg.footWorld.copy(leg.transitionStart).lerp(leg.transitionTarget, u);
+            leg.footWorld.y = footGroundHeight(leg.footWorld);
+            leg.swingState = false;
+            leg.swingStart.copy(leg.footWorld);
+            leg.swingTarget.copy(leg.transitionTarget);
+          } else if (controlIdle) {
+            swing = false;
+            leg.footWorld.y = footGroundHeight(leg.footWorld);
+            leg.swingState = false;
+            leg.swingStart.copy(leg.footWorld);
+            leg.swingTarget.copy(leg.footWorld);
+          } else if (state.recoveryT > 0) {
+            swing = false;
+            const recoveryLocal = nominalFoot(leg.def);
+            recoveryLocal.x += leg.def.side * 0.42;
+            recoveryLocal.setY(-currentBodyY);
+            const recoveryWorld = bodyGroup.localToWorld(limitFootTarget(leg.def, recoveryLocal).clone());
+            recoveryWorld.y = footGroundHeight(recoveryWorld);
+            leg.footWorld.lerp(recoveryWorld, 0.20);
+            leg.swingState = false;
+            leg.swingStart.copy(leg.footWorld);
+            leg.swingTarget.copy(recoveryWorld);
+          } else {
+            if (swing && !leg.swingState) {
+              leg.swingState = true;
+              leg.swingStart.copy(leg.footWorld);
+              const landingLocal = limitFootTarget(leg.def, nominalFoot(leg.def).add(footPlacementOffset(leg.def, 1, state.vel, state.yawVel))).setY(-currentBodyY);
+              leg.swingTarget.copy(bodyGroup.localToWorld(landingLocal.clone()));
+              leg.swingTarget.y = footGroundHeight(leg.swingTarget);
+            }
+            if (!swing && leg.swingState) {
+              leg.swingState = false;
+              leg.footWorld.copy(leg.swingTarget);
+              leg.footWorld.y = footGroundHeight(leg.footWorld);
+            }
+            if (swing) {
+              leg.footWorld.copy(leg.swingStart).lerp(leg.swingTarget, p);
+              leg.footWorld.y = lerp(footGroundHeight(leg.swingStart), footGroundHeight(leg.swingTarget), p) + Math.sin(Math.PI * p) * state.lift;
+            } else {
+              leg.footWorld.y = footGroundHeight(leg.footWorld);
+            }
+          }
+
+          bodyMatrixInverse.copy(bodyGroup.matrixWorld).invert();
+          const targetBodyLocal = leg.footWorld.clone().applyMatrix4(bodyMatrixInverse);
+          solveIK(leg, targetBodyLocal, swing);
+          bodyGroup.updateMatrixWorld(true);
+          syncFootContactVisuals(leg);
+          leg.ghostTarget.position.set(leg.swingTarget.x, terrainHeightAt(leg.swingTarget.x, leg.swingTarget.z) + 0.06, leg.swingTarget.z);
+          updateTrail(leg, leg.swingStart, leg.swingTarget, swing);
+        }
+
+        if (state.motionFrame !== 'static') controls.target.lerp(new THREE.Vector3(robot.position.x, currentBodyY * 0.7, robot.position.z), 0.08);
+        updateDirectionVisuals(currentBodyY);
+        updateContactShadows();
+        updateStabilityVisuals(dt);
+        updateCameraMode(dt, currentBodyY);
+        updateKeyUI();
+        updatePhaseUI(cycle);
+        controls.update();
+        sanitizePhysics();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      });
+
+      renderer.domElement.addEventListener('pointerdown', beginBallGrab);
+      renderer.domElement.addEventListener('pointermove', dragBall);
+      renderer.domElement.addEventListener('pointerup', releaseBall);
+      renderer.domElement.addEventListener('pointercancel', releaseBall);
+
+      addEventListener('keydown', e => {
+        const k = e.key.toLowerCase();
+        if (k in keys) {
+          state.autopilot = false;
+          autopilotTarget.visible = false;
+          document.getElementById('autopilotBtn').textContent = 'autopilot_off';
+          keys[k] = true;
+          if (state.motionFrame !== 'control') {
+            document.querySelectorAll('[data-motion]').forEach(b => b.classList.remove('active'));
+            document.querySelector('[data-motion="control"]').classList.add('active');
+            setMotionFrame('control', 0.32);
+          }
+        }
+      });
+      addEventListener('keyup', e => {
+        const k = e.key.toLowerCase();
+        if (k in keys) keys[k] = false;
+      });
+
+      document.querySelectorAll('[data-mode]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.mode = btn.dataset.mode;
+          startFootTransition(0.30);
+        });
+      });
+
+      document.querySelectorAll('[data-lang]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-lang]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.lang = btn.dataset.lang;
+          document.documentElement.lang = state.lang;
+          applyLanguage();
+        });
+      });
+
+      document.querySelectorAll('[data-motion]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-motion]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.autopilot = false;
+          autopilotTarget.visible = false;
+          document.getElementById('autopilotBtn').textContent = 'autopilot_off';
+          setMotionFrame(btn.dataset.motion, 0.38);
+        });
+      });
+
+      document.querySelectorAll('[data-damage]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const leg = legs.find(l => l.def.id === btn.dataset.damage);
+          if (!leg) return;
+          leg.damaged = !leg.damaged;
+          btn.classList.toggle('active', leg.damaged);
+          if (leg.damaged) {
+            leg.swingState = false;
+            leg.swingTarget.copy(leg.footWorld);
+            leg.swingStart.copy(leg.footWorld);
+            state.recoveryT = Math.max(state.recoveryT, 1.0);
+          } else {
+            startFootTransition(0.35);
+          }
+          updateDamageStatus();
+        });
+      });
+
+      document.querySelectorAll('[data-camera]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-camera]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.cameraMode = btn.dataset.camera;
+          controls.enabled = state.cameraMode === 'orbit';
+        });
+      });
+
+      document.querySelectorAll('[data-visual]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.visual;
+          state.visuals[key] = !state.visuals[key];
+          btn.classList.toggle('active', state.visuals[key]);
+          if (key === 'ghost' && !state.visuals.ghost) legs.forEach(leg => { leg.ghostTarget.visible = false; });
+          if (key === 'com' && !state.visuals.com) {
+            comMarker.visible = false;
+            comLine.visible = false;
+          }
+          if (key === 'support' && !state.visuals.support) supportLine.visible = false;
+          if (key === 'shadows' && !state.visuals.shadows) {
+            legs.forEach(leg => { leg.footShadow.visible = false; });
+            ballShadow.visible = false;
+          }
+        });
+      });
+
+      document.getElementById('autopilotBtn').addEventListener('click', e => {
+        state.autopilot = !state.autopilot;
+        e.currentTarget.textContent = state.autopilot ? 'autopilot_on' : 'autopilot_off';
+        document.getElementById('autopilotStatus').textContent = state.autopilot ? 'click_terrain_target' : 'enable_then_click_terrain';
+        if (!state.autopilot) autopilotTarget.visible = false;
+      });
+
+      function bindSlider(id, key, fmt) {
+        const el = document.getElementById(id);
+        const out = document.getElementById(id + 'Val');
+        el.addEventListener('input', () => {
+          state[key] = Number(el.value);
+          out.textContent = fmt(state[key]);
+          if (key === 'bodyHeight') startFootTransition(0.24);
+        });
+      }
+      bindSlider('speed', 'speed', v => v.toFixed(2) + 'x');
+      bindSlider('step', 'step', v => v.toFixed(2));
+      bindSlider('lift', 'lift', v => v.toFixed(2));
+      bindSlider('height', 'bodyHeight', v => v.toFixed(2));
+
+      function bindLengthSlider(id, setter) {
+        const el = document.getElementById(id);
+        const out = document.getElementById(id + 'Val');
+        el.addEventListener('input', () => {
+          const value = Number(el.value);
+          setter(value);
+          out.textContent = value.toFixed(2);
+          updateLegGeometry();
+        });
+      }
+      bindLengthSlider('coxaLen', v => { L1 = v; });
+      bindLengthSlider('femurLen', v => { L2 = v; });
+      bindLengthSlider('tibiaLen', v => { L3 = v; });
+
+      document.getElementById('ballMass').addEventListener('input', e => {
+        ballMass = Number(e.currentTarget.value);
+        document.getElementById('ballMassVal').textContent = ballMass.toFixed(1);
+      });
+      document.getElementById('ballSize').addEventListener('input', e => {
+        const baseRadius = 0.72;
+        ballRadius = Number(e.currentTarget.value);
+        document.getElementById('ballSizeVal').textContent = ballRadius.toFixed(2);
+        ball.scale.setScalar(ballRadius / baseRadius);
+      });
+      document.getElementById('throwPower').addEventListener('input', e => {
+        throwPower = Number(e.currentTarget.value);
+        document.getElementById('throwPowerVal').textContent = throwPower.toFixed(2) + 'x';
+      });
+
+      document.getElementById('pauseBtn').addEventListener('click', e => {
+        state.paused = !state.paused;
+        e.currentTarget.textContent = state.paused ? i18n[state.lang].resume : i18n[state.lang].pause;
+        e.currentTarget.classList.toggle('active', state.paused);
+      });
+      document.getElementById('dropBallBtn').addEventListener('click', dropBall);
+
+      applyLanguage();
+      updateDamageStatus();
+    } catch (err) {
+      console.error(err);
+      errorBox.style.display = 'grid';
+      errorBox.innerHTML = `<div><strong>3D_PREVIEW_LOAD_ERROR</strong><br><br>${String(err.message || err)}<br><br>Open this HTML in a browser with internet access so the Three.js CDN can load.</div>`;
+    }
+  </script>
+</body>
+</html>
